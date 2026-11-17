@@ -1,0 +1,13 @@
+{
+  "schema_version": 3,
+  "frame": "door_root_z_up_m",
+  "door_config": "doorman_right_out_no_latch.json",
+  "door_sha256": "750ebb364b717ea08a006e36fda54d19d049c95c505f4a03a65609bac5753004",
+  "wall_thickness_m": 0.16,
+  "wall_height_m": 2.4,
+  "wall_outer_y_m": 4.0,
+  "task_half_width_m": 2.0,
+  "robot_radius_m": 0.5,
+  "wall_alignment": "robot_side_flush",
+  "door_geometry_profile": "native_frame_v1"
+}

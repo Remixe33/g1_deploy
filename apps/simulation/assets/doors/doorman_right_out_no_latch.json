@@ -1,0 +1,31 @@
+{
+  "source": "NVlabs/GR00T-VisualSim2Real@doorman",
+  "seed": 42,
+  "doorOpenLR": "right",
+  "doorOpenIO": "out",
+  "buildLatch": false,
+  "height": 2.05,
+  "width": 0.9,
+  "thickness": 0.045,
+  "mass": 35.0,
+  "handleHeight": 1.02,
+  "handleEdgeOffset": 0.1,
+  "handleLength": 0.13,
+  "handleRadius": 0.013,
+  "handleStandoff": 0.09,
+  "hingeLimitsDeg": [
+    -0.5,
+    75.0
+  ],
+  "hingeJoint": "/Door/panel/hinge_joint",
+  "handleJoint": "/Door/panel/handle_joint",
+  "handleLimitsDeg": [
+    0.0,
+    35.0
+  ],
+  "handleReturnStiffness": 1.5,
+  "handleReturnDamping": 0.05,
+  "handlePrim": "/Door/door_handle",
+  "graspTarget": "/Door/door_handle/grasp_target",
+  "targetOpenAngleDeg": 65.0
+}

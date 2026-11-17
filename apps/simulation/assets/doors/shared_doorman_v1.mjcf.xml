@@ -1,0 +1,23 @@
+<mujoco model="shared_doorman_v1">
+  <compiler angle="radian" autolimits="true"/>
+  <worldbody>
+    <body name="door_frame">
+      <geom name="frame_post_positive_y" type="box" pos="0 0.49 1.065" size="0.0225 0.04 1.065" rgba="0.75 0.76 0.78 1"/>
+      <geom name="frame_post_negative_y" type="box" pos="0 -0.49 1.065" size="0.0225 0.04 1.065" rgba="0.75 0.76 0.78 1"/>
+      <geom name="frame_header" type="box" pos="0 0 2.09" size="0.0225 0.53 0.04" rgba="0.75 0.76 0.78 1"/>
+      <geom name="frame_wall_positive_y" type="box" pos="0 1.03 1.065" size="0.0225 0.5 1.065" rgba="0.65 0.66 0.68 1"/>
+      <geom name="frame_wall_negative_y" type="box" pos="0 -1.03 1.065" size="0.0225 0.5 1.065" rgba="0.65 0.66 0.68 1"/>
+      <body name="door_panel" pos="0.0225 0.447 0">
+        <joint name="hinge_joint" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.00872664626 1.308996939" margin="0" solreflimit="-20000 -900"/>
+        <geom name="panel" type="box" pos="-0.0225 -0.447 1.025" size="0.0225 0.447 1.023" rgba="0.55 0.35 0.20 1" mass="35"/>
+        <body name="door_handle" pos="-0.0225 -0.797 1.02">
+          <joint name="handle_joint" type="hinge" axis="-1 0 0" pos="0 0 0" range="0 0.6108652382" stiffness="1.5" damping="0.05" solreflimit="-40 -4"/>
+          <geom name="handle_axle" type="capsule" fromto="-0.09 0 0 0.09 0 0" size="0.013" rgba="0.25 0.26 0.28 1" mass="0.14"/>
+          <geom name="handle_lever_negative_x" type="capsule" fromto="-0.09 0 0 -0.09 0.13 0" size="0.013" rgba="0.25 0.26 0.28 1" mass="0.105"/>
+          <geom name="handle_lever_positive_x" type="capsule" fromto="0.09 0 0 0.09 0.13 0" size="0.013" rgba="0.25 0.26 0.28 1" mass="0.105"/>
+          <site name="grasp_target" pos="-0.115 0.065 0.02" size="0.01" rgba="1 0 0 0.4"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

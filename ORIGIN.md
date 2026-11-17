@@ -6,7 +6,8 @@ Parkour inference is additionally adapted from the local checkout of
 `7c6642f89e25f72dd7de3cf7683f166bce943fef`.
 The original BSD project license is retained. Network/config details and SHA256
 values are recorded in [docs/PARKOUR.md](docs/PARKOUR.md).
-No MuJoCo simulator, XML or mesh assets are copied into this repository.
+No MuJoCo simulator or mesh assets are copied into this repository; the only XML
+asset is the door scene copied from the local OpenDoor-GraspPlan checkout (below).
 
 Extracted from the working tree of `wangsy1999/unitree_mujoco`, based on commit `7c6642f89e25f72dd7de3cf7683f166bce943fef`.
 The source includes subsequent local DreamWaQ hardware deployment changes.
@@ -41,3 +42,12 @@ The DreamWaQ deployment configuration is serialized as JSON.
 Parkour maintains its own `hardware` section in `apps/parkour/config/g1_parkour.json`; hardware settings are no longer shared between programs.
 
 Model paths are configured in each program's JSON, relative to the configuration directory.
+
+Door scene asset: `apps/simulation/assets/doors/` (MJCF + door config JSONs), copied verbatim on 2026-11-17
+from the local checkout `/home/xxx/Projects/OpenDoor-GraspPlan/assets/doors/` (door generator `shared-door-v2`,
+door config `doorman_right_out_no_latch.json`, scene layout `doorman_right_out_with_walls.json`).
+Primitive geoms only: no meshes, no actuators. Used by `--terrain doors` in `apps/simulation/terrain.py`.
+SHA256:
+- `shared_doorman_v1.mjcf.xml`: `555b74e4becf3018c788480cea3c4bcc328fc683dd520f2a5c6be567ba1d5d87`
+- `doorman_right_out_no_latch.json`: `750ebb364b717ea08a006e36fda54d19d049c95c505f4a03a65609bac5753004`
+- `doorman_right_out_with_walls.json`: `f36efcb496a38cdc8163ae2802338b02f658ff7cf9c8b515e11fe4038afb10e8`

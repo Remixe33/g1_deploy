@@ -27,8 +27,9 @@ def main():
     parser.add_argument("--follow", action="store_true",
                         help="Start with a camera tracking the robot torso")
     parser.add_argument("--terrain", default="original",
-                        choices=("original", "mixed", "platforms", "stones", "gaps", "stairs", "hurdles"),
-                        help="Obstacle course; mixed places categories in parallel lanes (default: original external scene)")
+                        choices=("original", "mixed", "platforms", "stones", "gaps", "stairs", "hurdles", "doors"),
+                        help="Obstacle course; mixed places categories in parallel lanes, doors places a pushable "
+                             "door with side walls ahead of the robot (default: original external scene)")
     parser.add_argument("--window-backend", choices=("auto", "x11", "wayland"), default="x11",
                         help="Window backend (default: x11); auto prefers X11/XWayland when DISPLAY is available")
     args = parser.parse_args()

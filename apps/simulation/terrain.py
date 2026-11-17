@@ -5,8 +5,11 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 
-TERRAINS = ("original", "mixed", "platforms", "stones", "gaps", "stairs", "hurdles")
+TERRAINS = ("original", "mixed", "platforms", "stones", "gaps", "stairs", "hurdles", "doors")
 SETTINGS = Path(__file__).with_name("terrain.json")
+DOOR_ASSETS = Path(__file__).with_name("assets") / "doors"
+DOOR_ASSET = DOOR_ASSETS / "shared_doorman_v1.mjcf.xml"
+DOOR_SCENE_JSON = DOOR_ASSETS / "doorman_right_out_with_walls.json"
 COLORS = {
     "ground": "0.27 0.32 0.36 1",
     "platforms": "0.78 0.55 0.25 1",
@@ -99,13 +102,8 @@ class Course:
         return self.sections
 
 
-def generate_scene(root, selection, destination):
-    """Copy scene/robot definitions into a temporary MJCF and replace only terrain."""
-    if selection not in TERRAINS or selection == "original":
-        raise ValueError(f"Cannot generate terrain: {selection}")
-    robot_dir = Path(root) / "unitree_robots/g1"
-    scene = ET.parse(robot_dir / "scene_29dof.xml").getroot()
-    # Inline the robot so compiler/mesh paths do not depend on the temporary directory.
+def _inline_robot(scene, robot_dir):
+    """把机器人定义内联进场景，使网格路径不依赖临时目录。"""
     for include in list(scene.findall("include")):
         scene.remove(include)
     robot = ET.parse(robot_dir / "g1_29dof.xml").getroot()
@@ -115,6 +113,64 @@ def generate_scene(root, selection, destination):
                 if attribute in child.attrib:
                     child.set(attribute, str((robot_dir / child.get(attribute)).resolve()))
         scene.insert(0, child)
+
+
+def _build_door_scene(scene, settings, destination):
+    """在原始平地场景里，把 shared_doorman_v1 门放到机器人正前方（右铰链、朝 +X 外开）。"""
+    door_x = settings["doors"]["x"]
+    # 场景自身的 worldbody（灯光+地面）在内联机器人之后，门排在机器人后面即可保证文档顺序安全。
+    world = scene.findall("worldbody")[-1]
+    door = ET.parse(DOOR_ASSET).getroot().find("worldbody/body")
+    scene_config = json.loads(DOOR_SCENE_JSON.read_text())
+    thickness = scene_config["wall_thickness_m"]
+    height = scene_config["wall_height_m"]
+    outer = scene_config["wall_outer_y_m"]
+    # 资产自带的 1 m 小侧墙由正式墙体取代（对齐 OpenDoor-GraspPlan DoorScene 的 robot_side_flush 语义）。
+    flank = door.find("geom[@name='frame_wall_positive_y']")
+    inner = abs(float(flank.get("pos").split()[1])) - float(flank.get("size").split()[1])
+    for geom in list(door.findall("geom")):
+        if geom.get("name", "").startswith("frame_wall_"):
+            door.remove(geom)
+    door.set("pos", f"{door_x} 0 0")
+    world.append(door)
+    # 墙体：从门洞边缘到 wall_outer_y，机器人侧 (-X) 面与门板 -X 面齐平。
+    panel_thickness = 2 * float(door.find(".//geom[@name='panel']").get("size").split()[0])
+    center_x = (thickness - panel_thickness) / 2
+    center_y, half_y = (inner + outer) / 2, (outer - inner) / 2
+    for name in ("negative", "positive"):
+        sign = 1 if name == "positive" else -1
+        ET.SubElement(world, "geom", name=f"door_wall_{name}", type="box", rgba="0.72 0.73 0.75 1",
+                      pos=f"{door_x + center_x} {sign * center_y} {height / 2}",
+                      size=f"{thickness / 2} {half_y} {height / 2}")
+    scene.set("model", "G1 door scene")
+    ET.indent(scene, space="  ")
+    ET.ElementTree(scene).write(destination, encoding="utf-8", xml_declaration=True)
+    return [("doors", door_x, door_x, 0.0)]
+
+
+def generate_scene(root, selection, destination):
+    """Copy scene/robot definitions into a temporary MJCF and replace only terrain."""
+    if selection not in TERRAINS or selection == "original":
+        raise ValueError(f"Cannot generate terrain: {selection}")
+    robot_dir = Path(root) / "unitree_robots/g1"
+    scene = ET.parse(robot_dir / "scene_29dof.xml").getroot()
+    # Inline the robot so compiler/mesh paths do not depend on the temporary directory.
+    _inline_robot(scene, robot_dir)
+    settings = json.loads(SETTINGS.read_text())
+
+    def validate_numbers(values):
+        for value in values.values():
+            if isinstance(value, dict):
+                validate_numbers(value)
+                continue
+            numbers = value if isinstance(value, list) else [value]
+            if not numbers or any(not isinstance(number, (int, float)) or
+                                  not math.isfinite(number) or number <= 0 for number in numbers):
+                raise ValueError("Terrain dimensions must be finite positive numbers")
+
+    validate_numbers(settings)
+    if selection == "doors":
+        return _build_door_scene(scene, settings, destination)
     for world in scene.findall("worldbody"):
         for floor in list(world.findall("geom")):
             if floor.get("type") == "plane" or floor.get("name") == "floor":
@@ -140,18 +196,6 @@ def generate_scene(root, selection, destination):
     ET.SubElement(assets, "material", name="terrain_sandstone_ground", texture="terrain_sandstone_texture",
                   texuniform="true", texrepeat="0.5 0.5", reflectance="0", specular="0.04", shininess="0.05")
     world = ET.SubElement(scene, "worldbody")
-    settings = json.loads(SETTINGS.read_text())
-    def validate_numbers(values):
-        for value in values.values():
-            if isinstance(value, dict):
-                validate_numbers(value)
-                continue
-            numbers = value if isinstance(value, list) else [value]
-            if not numbers or any(not isinstance(number, (int, float)) or
-                                  not math.isfinite(number) or number <= 0 for number in numbers):
-                raise ValueError("Terrain dimensions must be finite positive numbers")
-
-    validate_numbers(settings)
     if len(settings["stones"]["heights"]) != len(settings["stones"]["radii"]):
         raise ValueError("Each stepping stone requires a height and radius")
     if not isinstance(settings["stairs"]["steps"], int):

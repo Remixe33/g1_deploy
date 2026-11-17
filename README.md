@@ -97,6 +97,7 @@ python3 apps/simulation/sim.py --mujoco-root /path/to/unitree_mujoco --domain 1
 | `--terrain gaps` | 宽 20、35、50、65、80、100 cm 的沟槽，落地区长 1.8 m |
 | `--terrain stairs` | 台阶高度 8、12、16 cm 的三组上下楼梯 |
 | `--terrain hurdles` | 高 10、20、30、40 cm 的窄横栏 |
+| `--terrain doors` | 正前方 2 m 一扇右铰链外开门（35 kg 门板可推），两侧通墙 |
 | `--terrain mixed` | 五类并排独立通道，均沿 +X 前进 |
 | `--terrain original` | 外部仓库的原场景（默认） |
 
@@ -106,6 +107,8 @@ python apps/simulation/sim.py --mujoco-root /path/to/unitree_mujoco \
 ```
 
 综合场景的五类地形并排摆放，均从 X=3 m 开始：高台中心 Y=0、梅花桩 Y=5、gap Y=-5、楼梯 Y=10、横栏 Y=-10（单位米）。前方是连通各通道的起点广场，可先转向走到目标通道，再沿 +X 测试。通道宽 4 m，中心间距 5 m（`lane_spacing`）；沟槽与桩间底面低于行走面 1 m，未保留隐藏的上层平面。尺寸可在 [terrain.json](apps/simulation/terrain.json) 中调整。启动时打印各通道的 X 范围和 Y 中心坐标；地形临时生成，退出后清理，不修改外部机器人模型和场景文件。两套控制器共用这些地形，能否通过需按模型实际表现验证。
+
+`--terrain doors` 使用原始平地场景，在机器人正前方 2 m（`terrain.json` 的 `doors.x`）摆一扇来自 OpenDoor-GraspPlan 的门：门根（门洞地面中心）位于 (doors.x, 0)，右铰链、朝远离机器人的 +X 方向外开，35 kg 门板与把手均为被动铰链，可用身体推门或转动把手开门。门两侧有通墙（厚 0.16 m、高 2.4 m、从门洞边缘延伸到 ±4 m），机器人无法绕过门洞。门的 MJCF 已逐字复制到 [apps/simulation/assets/doors/](apps/simulation/assets/doors/)（来源与 SHA256 见 [ORIGIN.md](ORIGIN.md)）；门铰链为普通被动关节，不新增执行器，`nu` 保持 29，控制器接口不受影响。注意：深度射线会过滤静态几何，深度图里能看到动态的门板与把手，看不到静态的门框与墙体。
 
 窗口后端默认使用 `x11`（Wayland 会话下通过 XWayland），启动时无需额外指定，避免 libdecor 插件加载失败造成标题栏缺失。可用 `--window-backend wayland` 显式切换，或用 `--window-backend auto` 根据环境选择；auto 会保留已有 `PYGLFW_LIBRARY_VARIANT` 设置，否则在有 `DISPLAY` 时优先使用 X11。需要重启仿真才能生效。
 
