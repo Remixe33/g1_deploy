@@ -51,3 +51,14 @@ SHA256:
 - `shared_doorman_v1.mjcf.xml`: `555b74e4becf3018c788480cea3c4bcc328fc683dd520f2a5c6be567ba1d5d87`
 - `doorman_right_out_no_latch.json`: `750ebb364b717ea08a006e36fda54d19d049c95c505f4a03a65609bac5753004`
 - `doorman_right_out_with_walls.json`: `f36efcb496a38cdc8163ae2802338b02f658ff7cf9c8b515e11fe4038afb10e8`
+
+Optional head-back mounting recipe: `apps/simulation/terrain.py` (`_apply_head_back`, `apply_head_back_camera`)
+transcribes the static head mount from the local OpenDoor-GraspPlan branch `codex/g1-head-pitch20`
+(commit `7200116`, `src/opendoor_plan/hierarchical/head_pose.py`), selected via `terrain.json` `"head": {"back_deg": ...}`.
+Whole head_link is rotated about torso +Y by -back_deg around torso-frame pivot [0, 0, 0.320] m
+(user-specified 2026-11-13, not calibrated); the head contribution (mass 1.036 kg, COM and inertia read from
+`ext/unitree_ros/robots/g1_description/g1_29dof_lock_waist_with_hand_rev_1_0.urdf`, `head_joint` + `head_link`
+`<inertial>`, head COM in torso frame [0.0092305, 0.000299, 0.405869]) is merged back into the torso `<inertial>`
+with total mass kept constant. The depth camera follows the same pivot transform (mount point through H,
+optical axis re-pitched) in `apps/simulation/sim.py`'s publisher, mirroring OpenDoor's `realsense.py` mount mapping.
+No asset files are copied for this feature; only the recipe and the constants above are transcribed.

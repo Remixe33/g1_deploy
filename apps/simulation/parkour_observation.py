@@ -5,6 +5,7 @@ from g1_shared_memory import SharedFeed
 import struct
 import threading
 
+active_adapter = None  # 当前发布器持有的观测 adapter，供 viewer 调试钩子（如 FOV 边缘射线）读取
 
 
 def joint_signature(names, signs):
@@ -20,6 +21,8 @@ class ParkourObservationPublisher:
         self.config_path = str(config_path)
         cfg = json.loads(Path(config_path or Path(__file__).with_name('g1.json')).read_text())
         self.adapter = MujocoAdapter(model, data, cfg)
+        global active_adapter
+        active_adapter = self.adapter
         self.signature = joint_signature(cfg['joint_names'], cfg['joint_sign'])
         self.data = data
         self.period = cfg['step_dt']

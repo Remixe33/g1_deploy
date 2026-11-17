@@ -3,6 +3,7 @@ import json
 import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
+import numpy as np
 
 
 TERRAINS = ("original", "mixed", "platforms", "stones", "gaps", "stairs", "hurdles", "doors")
@@ -10,6 +11,125 @@ SETTINGS = Path(__file__).with_name("terrain.json")
 DOOR_ASSETS = Path(__file__).with_name("assets") / "doors"
 DOOR_ASSET = DOOR_ASSETS / "shared_doorman_v1.mjcf.xml"
 DOOR_SCENE_JSON = DOOR_ASSETS / "doorman_right_out_with_walls.json"
+
+# 可选的静态头部后仰（不是机械关节）：复刻 OpenDoor-GraspPlan 分支 codex/g1-head-pitch20
+# 的 head_pose.py 安装公式——整块 head_link 绕躯干 +Y 轴向后旋（负向=抬头），轴心为用户
+# 2026-11-13 在躯干 X-Z 图上指定的 [0, 0, 0.320] m；头部质量/质心/惯量并回躯干重算。
+HEAD_PIVOT_TORSO_M = np.array([0.0, 0.0, 0.320])
+# 头部数值来自 unitree_ros g1_description URDF（head_joint rpy=0，head_link <inertial>），
+# 与 OpenDoor head_pose.py original_head_inertial() 同源；质心=安装点+质心偏移。
+HEAD_MASS_KG = 1.036
+HEAD_CENTRE_TORSO_M = np.array([0.0092305, 0.000299, 0.405869])
+HEAD_INERTIA_TORSO = np.array([
+    [0.004085051, -2.543e-06, -6.9455e-05],
+    [-2.543e-06, 0.004185212, -3.726e-06],
+    [-6.9455e-05, -3.726e-06, 0.001807911]])
+
+
+def _vector(text):
+    return np.array([float(value) for value in text.split()], dtype=float)
+
+
+def _head_back_rotation(back_deg):
+    angle = -math.radians(back_deg)
+    c, s = math.cos(angle), math.sin(angle)
+    return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
+
+
+def _rotation_to_quat(rotation):
+    """3x3 旋转矩阵 -> MuJoCo wxyz 四元数。"""
+    trace = np.trace(rotation)
+    if trace > 0:
+        scale = math.sqrt(trace + 1.0) * 2
+        quat = np.array([0.25 * scale,
+                         (rotation[2, 1] - rotation[1, 2]) / scale,
+                         (rotation[0, 2] - rotation[2, 0]) / scale,
+                         (rotation[1, 0] - rotation[0, 1]) / scale])
+    elif rotation[0, 0] > rotation[1, 1] and rotation[0, 0] > rotation[2, 2]:
+        scale = math.sqrt(1.0 + rotation[0, 0] - rotation[1, 1] - rotation[2, 2]) * 2
+        quat = np.array([(rotation[2, 1] - rotation[1, 2]) / scale, 0.25 * scale,
+                         (rotation[0, 1] + rotation[1, 0]) / scale,
+                         (rotation[0, 2] + rotation[2, 0]) / scale])
+    elif rotation[1, 1] > rotation[2, 2]:
+        scale = math.sqrt(1.0 + rotation[1, 1] - rotation[0, 0] - rotation[2, 2]) * 2
+        quat = np.array([(rotation[0, 2] - rotation[2, 0]) / scale,
+                         (rotation[0, 1] + rotation[1, 0]) / scale, 0.25 * scale,
+                         (rotation[1, 2] + rotation[2, 1]) / scale])
+    else:
+        scale = math.sqrt(1.0 + rotation[2, 2] - rotation[0, 0] - rotation[1, 1]) * 2
+        quat = np.array([(rotation[1, 0] - rotation[0, 1]) / scale,
+                         (rotation[0, 2] + rotation[2, 0]) / scale,
+                         (rotation[1, 2] + rotation[2, 1]) / scale, 0.25 * scale])
+    return quat / np.linalg.norm(quat)
+
+
+def head_back_deg():
+    """terrain.json 的可选头部后仰角（度）；head 节缺失 = 0 = 标准姿态。"""
+    section = json.loads(SETTINGS.read_text()).get("head")
+    if section is None:
+        return 0.0
+    value = float(section["back_deg"])
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("head.back_deg must be finite positive; remove the head section to disable")
+    return value
+
+
+def apply_head_back_camera(adapter, back_deg):
+    """让深度相机随头部一起后仰：方向同角度旋转，安装点绕头部枢点变换（光轴下俯角减小 back_deg）。
+
+    位置必须用与 head_geom 相同的 H = Trans(p)·Ry·Trans(−p)（枢点 p=[0,0,0.320]），
+    不能绕躯干原点旋转——否则相机原点会被甩到肩部区域。adapter.cosines 是射线
+    相对相机光轴的夹角，头+相机一起转时不变，保持原样。
+    """
+    rotation = _head_back_rotation(back_deg)
+    adapter.rays = np.ascontiguousarray(adapter.rays @ rotation.T)
+    adapter.offset = HEAD_PIVOT_TORSO_M + rotation @ (adapter.offset - HEAD_PIVOT_TORSO_M)
+
+
+def _apply_head_back(scene, back_deg):
+    """把机器人头部的几何与躯干合并惯量按静态安装公式后仰 back_deg（覆盖所有生成场景）。"""
+    rotation = _head_back_rotation(back_deg)
+    pivot = HEAD_PIVOT_TORSO_M
+    torso = next(body for body in scene.iter("body")
+                 if body.find("geom[@mesh='head_link']") is not None)
+    for geom in torso.findall("geom[@mesh='head_link']"):
+        if geom.get("quat"):
+            raise ValueError("head geom already carries a quat; composition would be required")
+        pos = pivot + rotation @ (_vector(geom.get("pos")) - pivot)
+        geom.set("pos", " ".join(f"{value:.9g}" for value in pos))
+        half = math.radians(back_deg) / 2
+        geom.set("quat", f"{math.cos(half):.9g} 0 {-math.sin(half):.9g} 0")
+    inertial = torso.find("inertial")
+    mass = float(inertial.get("mass"))
+    centre = _vector(inertial.get("pos"))
+    axes = np.eye(3)
+    if inertial.get("quat"):
+        # wxyz 四元数 -> 3x3（与 _rotation_to_quat 互逆的标准公式）
+        w, x, y, z = _vector(inertial.get("quat"))
+        axes = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    inertia = axes @ np.diag(_vector(inertial.get("diaginertia"))) @ axes.T
+    new_head_centre = pivot + rotation @ (HEAD_CENTRE_TORSO_M - pivot)
+    new_centre = centre + HEAD_MASS_KG / mass * (new_head_centre - HEAD_CENTRE_TORSO_M)
+    # reposition_merged_head（head_pose.py）的直接移植：总质量不变，只移动头部贡献。
+    inertia = (inertia
+               + mass * ((centre @ centre - new_centre @ new_centre) * np.eye(3)
+                         - np.outer(centre, centre) + np.outer(new_centre, new_centre))
+               + rotation @ HEAD_INERTIA_TORSO @ rotation.T - HEAD_INERTIA_TORSO
+               + HEAD_MASS_KG * ((new_head_centre @ new_head_centre - HEAD_CENTRE_TORSO_M @ HEAD_CENTRE_TORSO_M)
+                                 * np.eye(3) - np.outer(new_head_centre, new_head_centre)
+                                 + np.outer(HEAD_CENTRE_TORSO_M, HEAD_CENTRE_TORSO_M)))
+    values, vectors = np.linalg.eigh(inertia)
+    if np.linalg.det(vectors) < 0:
+        vectors[:, -1] *= -1
+    inertial.set("pos", " ".join(f"{value:.9g}" for value in new_centre))
+    inertial.set("quat", " ".join(f"{value:.9g}" for value in _rotation_to_quat(vectors)))
+    inertial.set("diaginertia", " ".join(f"{value:.9g}" for value in values))
+    custom = scene.find("custom")
+    if custom is None:
+        custom = ET.SubElement(scene, "custom")
+    ET.SubElement(custom, "numeric", name="g1_head_back_deg", data=f"{back_deg:.1f}")
 COLORS = {
     "ground": "0.27 0.32 0.36 1",
     "platforms": "0.78 0.55 0.25 1",
@@ -169,6 +289,9 @@ def generate_scene(root, selection, destination):
                 raise ValueError("Terrain dimensions must be finite positive numbers")
 
     validate_numbers(settings)
+    back_deg = float(settings.get("head", {}).get("back_deg", 0.0) or 0.0)
+    if back_deg:
+        _apply_head_back(scene, back_deg)
     if selection == "doors":
         return _build_door_scene(scene, settings, destination)
     for world in scene.findall("worldbody"):

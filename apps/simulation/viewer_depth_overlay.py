@@ -6,7 +6,7 @@ from types import ModuleType
 
 
 class DepthOverlay:
-    def __init__(self, viewer):
+    def __init__(self, viewer, fov_debug=False):
         import cv2
         import mujoco
         import numpy as np
@@ -18,8 +18,40 @@ class DepthOverlay:
         self.np = np
         self.preprocess = preprocess_depth
         self.next_update = 0.0
+        self.fov_debug = fov_debug
+
+    def draw_fov_edges(self):
+        """从深度相机出发画 4 条半透明射线（实际采样扇的四条角边），标出视野边界。"""
+        from parkour_observation import active_adapter
+
+        adapter = active_adapter
+        scene = getattr(self.viewer, "user_scn", None)
+        if adapter is None or scene is None or len(scene.geoms) < 4:
+            return
+        np = self.np
+        rotation = adapter.data.xmat[adapter.torso].reshape(3, 3)
+        origin = adapter.data.xpos[adapter.torso] + rotation @ adapter.offset
+        corners = adapter.rays[[0, 63, 2240, 2303]]  # 36x64 射线扇的四个角
+        with self.viewer.lock():
+            for slot, direction in enumerate(corners @ rotation.T):
+                direction = direction / np.linalg.norm(direction)
+                half = 1.5  # 长 3 m
+                helper = np.array([0.0, 0.0, 1.0])
+                if abs(float(np.dot(helper, direction))) > 0.9:
+                    helper = np.array([1.0, 0.0, 0.0])
+                x_axis = np.cross(helper, direction)
+                x_axis /= np.linalg.norm(x_axis)
+                y_axis = np.cross(direction, x_axis)
+                self.mujoco.mjv_initGeom(
+                    scene.geoms[slot], self.mujoco.mjtGeom.mjGEOM_CAPSULE,
+                    np.array([0.008, half, 0.0]), origin + direction * half,
+                    np.column_stack([x_axis, y_axis, direction]).ravel(),
+                    np.array([0.2, 1.0, 0.4, 0.35]))
+            scene.ngeom = 4
 
     def update(self, depth, sim_time):
+        if self.fov_debug:
+            self.draw_fov_edges()
         now = time.monotonic()
         if depth is None or now < self.next_update or not self.viewer.is_running():
             return
@@ -70,7 +102,7 @@ class DepthOverlay:
 
 
 @contextmanager
-def install_depth_overlay():
+def install_depth_overlay(fov_debug=False):
     """Adapt the external simulator's preview hook; restore imports on exit."""
     import mujoco.viewer
 
@@ -88,7 +120,7 @@ def install_depth_overlay():
     def create_preview():
         if not viewers:
             raise RuntimeError("The MuJoCo viewer must be opened before the depth preview")
-        return DepthOverlay(viewers[-1])
+        return DepthOverlay(viewers[-1], fov_debug=fov_debug)
 
     preview = ModuleType("depth_preview")
     preview.DepthPreview = create_preview

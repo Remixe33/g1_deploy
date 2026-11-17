@@ -24,6 +24,8 @@ def main():
                         help="Publish Parkour depth observations (DWaQ ignores them)")
     parser.add_argument("--depth-preview", action="store_true",
                         help="Show raw and model-input depth images in the MuJoCo viewer's top-right corner")
+    parser.add_argument("--fov-debug", action="store_true",
+                        help="Draw 4 translucent rays from the depth camera along the sampled FOV edges (requires --depth-preview)")
     parser.add_argument("--follow", action="store_true",
                         help="Start with a camera tracking the robot torso")
     parser.add_argument("--terrain", default="original",
@@ -37,6 +39,8 @@ def main():
         parser.error("Use a positive simulation domain")
     if args.depth_preview and not args.depth:
         parser.error("--depth-preview requires depth; remove --no-depth")
+    if args.fov_debug and not args.depth_preview:
+        parser.error("--fov-debug requires --depth-preview")
 
     root = args.mujoco_root.resolve()
     simulation = root / "simulate_python"
@@ -60,8 +64,10 @@ def main():
     try:
         sys.path.insert(0, str(simulation))
         sys.path.insert(0, str(Path(__file__).resolve().parent))
+        head_back = 0.0
         if args.terrain != "original":
-            from terrain import generate_scene
+            from terrain import generate_scene, head_back_deg
+            head_back = head_back_deg()
             temporary_scene = TemporaryDirectory(prefix="g1-terrain-")
             scene = Path(temporary_scene.name) / "scene.xml"
             sections = generate_scene(root, args.terrain, scene)
@@ -77,6 +83,9 @@ def main():
             class Publisher(original_publisher):
                 def __init__(self, model, data, port=None, config_path=None):
                     super().__init__(model, data, config_path=project_config)
+                    if head_back:
+                        from terrain import apply_head_back_camera
+                        apply_head_back_camera(self.adapter, head_back)
 
             bridge.ParkourObservationPublisher = Publisher
 
@@ -89,7 +98,9 @@ def main():
         config.PARKOUR_OBSERVATION_PORT = None # 外部启动接口的旧参数，不再使用网络
         config.PARKOUR_DEPTH_PREVIEW = args.depth_preview
         print(f"Shared G1 simulation: DDS domain {args.domain}, interface lo, "
-              f"depth {'on' if args.depth else 'off'}, window backend {window_backend}", flush=True)
+              f"depth {'on' if args.depth else 'off'}"
+              + (f", head back {head_back:g} deg" if head_back else "")
+              + f", window backend {window_backend}", flush=True)
         sys.argv = [str(simulator)]
         with ExitStack() as extensions:
             if args.follow:
@@ -97,7 +108,7 @@ def main():
                 extensions.enter_context(follow_robot())
             if args.depth_preview:
                 from viewer_depth_overlay import install_depth_overlay
-                extensions.enter_context(install_depth_overlay())
+                extensions.enter_context(install_depth_overlay(fov_debug=args.fov_debug))
             runpy.run_path(str(simulator), run_name="__main__")
     finally:
         if bridge is not None and original_publisher is not None:
