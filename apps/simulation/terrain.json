@@ -31,7 +31,9 @@
     "spacing": 1.5
   },
   "doors": {
-    "x": 2.0
+    "x": 2.0,
+    "handle_friction": 0.2,
+    "handle_stiffness": 3.0
   },
   "head": {
     "back_deg": 20.0

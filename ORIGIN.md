@@ -47,6 +47,8 @@ Door scene asset: `apps/simulation/assets/doors/` (MJCF + door config JSONs), co
 from the local checkout `/home/xxx/Projects/OpenDoor-GraspPlan/assets/doors/` (door generator `shared-door-v2`,
 door config `doorman_right_out_no_latch.json`, scene layout `doorman_right_out_with_walls.json`).
 Primitive geoms only: no meshes, no actuators. Used by `--terrain doors` in `apps/simulation/terrain.py`.
+The door-scene generator overrides the handle joint at runtime (`terrain.json` `doors.handle_friction` 0.2 N·m
+with hardened `solimpfriction`, `doors.handle_stiffness` 3.0 N·m/rad); the copied MJCF itself remains untouched.
 SHA256:
 - `shared_doorman_v1.mjcf.xml`: `555b74e4becf3018c788480cea3c4bcc328fc683dd520f2a5c6be567ba1d5d87`
 - `doorman_right_out_no_latch.json`: `750ebb364b717ea08a006e36fda54d19d049c95c505f4a03a65609bac5753004`

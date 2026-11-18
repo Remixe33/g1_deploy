@@ -10,6 +10,7 @@
 #include "g1_control_runtime.h"
 #include "g1_motion_service.h"
 #include "g1_control_targets.h"
+#include "g1_key_dictionary.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -144,15 +145,20 @@ private:
         keyboard = std::make_unique<g1_control::Keyboard>();
         control_input = gamepad_ ? &gamepad_->state : unitree_remote_ ? &remote_.state : nullptr;
         if (unitree_remote_) log.Line() << "Unitree remote: Start=real handover, X=reset, A=policy, Select=stop/exit. Direct stick velocity; R1 not required.\n";
-        log.Line() << "Ready. DRY RUN / command output OFF. P: reset preview (" << reset_seconds
-                  << " s), R: policy preview; 9/Start: real handover, then P required again. Space / Ctrl+C: exit.\n";
+        log.Line() << "Ready. DRY RUN / command output OFF.\n";
         start = Clock::now();
         if(policy_) policy_worker=std::make_unique<PolicyWorker>(
             [&](const PolicyObservation& input,const auto& velocity) {return policy_->Step(input.state,velocity);},
             [&] {policy_->Reset();},false,
             std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(policy_->dt)));
-        log.Line() << "Dry sequence: P -> wait -> R, no 9. Real sequence: 9 -> P -> wait -> R.\n"
-                  << "W/S: forward +/-0.1 m/s, A/D: lateral +/-0.1 m/s, Q/E: yaw +/-0.1 rad/s, X: zero velocity.\n";
+        log.Line() << "Dry sequence: P -> wait (" << reset_seconds << " s) -> R, no 9. Real sequence: 9 -> P -> wait -> R.\n";
+        if (!unitree_remote_) {
+            log.Line() << g1_keys::KeyTable(g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                            g1_keys::Action::Policy, g1_keys::Action::Move,
+                                            g1_keys::Action::Turn, g1_keys::Action::ZeroVelocity,
+                                            g1_keys::Action::Stop);
+            log.Line() << "Gamepad sticks use a 12% deadzone.\n";
+        }
     }
 
     bool ReadState() {
@@ -227,7 +233,8 @@ private:
             velocity.fill(0);
             if (policy_worker) policy_worker->Pause();
             output_enabled = true;
-            log.Line() << "Command output ENABLED. Dry preview cleared; damping wait. Press P to reset from measured pose.\n";
+            log.Line() << "Command output ENABLED. Dry preview cleared; damping wait.\n"
+                       << g1_keys::AvailableKeys("damping wait", g1_keys::Action::Reset, g1_keys::Action::Stop);
         }
     }
 
@@ -255,7 +262,10 @@ private:
             velocity.fill(0);
             policy_active = true;
             if(control_input) control_input->BeginPolicy();
-            log.Line() << (output_enabled ? "REAL" : "DRY RUN") << " locomotion policy ON; velocity = [0, 0, 0]. P: reset, Space / Ctrl+C: exit.\n";
+            log.Line() << (output_enabled ? "REAL" : "DRY RUN") << " locomotion policy ON; velocity = [0, 0, 0].\n"
+                       << g1_keys::AvailableKeys("policy", g1_keys::Action::Move, g1_keys::Action::Turn,
+                                                 g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
+                                                 g1_keys::Action::Stop);
         }
     }
 
@@ -323,7 +333,12 @@ private:
         }
         if (u == 1.0 && !holding) {
             log.Line() << "Target interpolation complete."
-                      << (output_enabled ? " Holding default pose.\n" : " Output disabled; target only.\n");
+                       << (output_enabled ? " Holding default pose.\n" : " Output disabled; target only.\n")
+                       << (output_enabled ? g1_keys::AvailableKeys("holding", g1_keys::Action::Policy,
+                                                                   g1_keys::Action::Reset, g1_keys::Action::Stop)
+                                          : g1_keys::AvailableKeys("holding, dry-run", g1_keys::Action::Policy,
+                                                                   g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                                                   g1_keys::Action::Stop));
             holding = true;
         }
     }

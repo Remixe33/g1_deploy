@@ -253,6 +253,17 @@ def _build_door_scene(scene, settings, destination):
             door.remove(geom)
     door.set("pos", f"{door_x} 0 0")
     world.append(door)
+    # 把手铰链覆写（不改资产文件）：真实门轴锁芯有摩擦，柄帽重力力矩（~0.134 N·m）会顶开
+    # 回位弹簧让把手静置下坠 ~5°；frictionloss 需配合 solimpfriction 提高阻抗——MuJoCo 的
+    # 摩擦约束是软约束，默认参数下恒定负载会蠕变到弹簧平衡点，硬化后下坠 <0.05°。
+    handle = door.find(".//joint[@name='handle_joint']")
+    friction = settings["doors"].get("handle_friction")
+    if friction is not None:
+        handle.set("frictionloss", f"{float(friction):g}")
+        handle.set("solimpfriction", "0.9999 0.99999 1e-06 0.5 2")
+    stiffness = settings["doors"].get("handle_stiffness")
+    if stiffness is not None:
+        handle.set("stiffness", f"{float(stiffness):g}")
     # 墙体：从门洞边缘到 wall_outer_y，机器人侧 (-X) 面与门板 -X 面齐平。
     panel_thickness = 2 * float(door.find(".//geom[@name='panel']").get("size").split()[0])
     center_x = (thickness - panel_thickness) / 2

@@ -10,6 +10,7 @@
 #include "g1_control_runtime.h"
 #include "g1_motion_service.h"
 #include "g1_control_targets.h"
+#include "g1_key_dictionary.h"
 #include "g1_parkour_input.h"
 #include "g1_policy_worker.h"
 #include "g1_hardware.h"
@@ -111,6 +112,13 @@ private:
                 throw std::runtime_error("Parkour reset pose exceeds hardware limits");
         }
         if(!joystick.empty()) gamepad=std::make_unique<g1_gamepad::Device>(joystick,false,false);
+        if(!hardware) {
+            log.Line()<<g1_keys::KeyTable(g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                          g1_keys::Action::Policy, g1_keys::Action::MoveForward,
+                                          g1_keys::Action::Turn, g1_keys::Action::ZeroVelocity,
+                                          g1_keys::Action::Stop);
+            log.Line()<<"Gamepad sticks use a 12% deadzone.\n";
+        }
         input=hardware?&remote.state:gamepad?&gamepad->state:nullptr;
         if(hardware) camera=std::make_unique<g1_camera::RealSenseCamera>();
         else simulation=std::make_unique<g1_parkour::SharedInput>("observation", 32 + 2369 * sizeof(float));
@@ -239,7 +247,8 @@ private:
             active = holding = running = false;
             velocity.fill(0);
             policy_worker->Pause();
-            log.Line()<<"Output enabled; preview cleared. Press p / remote X to reset again.\n";
+            log.Line()<<"Output enabled; preview cleared; damping wait.\n"
+                      <<g1_keys::AvailableKeys("damping wait", g1_keys::Action::Reset, g1_keys::Action::Stop);
         }
     }
 
@@ -266,7 +275,10 @@ private:
             running = true;
             velocity.fill(0);
             if(input) input->BeginPolicy();
-            log.Line()<<policy.Name()<<" policy ON."<<(powered?" Output active.\n":" Dry-run only.\n");
+            log.Line()<<policy.Name()<<" policy ON."<<(powered?" Output active.\n":" Dry-run only.\n")
+                      <<g1_keys::AvailableKeys("policy", g1_keys::Action::MoveForward, g1_keys::Action::Turn,
+                                               g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
+                                               g1_keys::Action::Stop);
         } else log.Line()<<"Joints not near training pose; reset first\n";
     }
 
@@ -298,7 +310,15 @@ private:
             if(!running) {
                 const double u=g1_control::ResetProgress(std::chrono::duration<double>(now-reset_at).count(),reset_seconds);
                 target=g1_control::InterpolateResetPose(start,neutral,u);
-                if(u==1&&!holding) {holding=true;log.Line()<<"Holding training pose; press r / remote A for policy.\n";}
+                if(u==1&&!holding) {
+                    holding=true;
+                    log.Line()<<"Holding training pose.\n"
+                              <<(powered?g1_keys::AvailableKeys("holding", g1_keys::Action::Policy,
+                                                                 g1_keys::Action::Reset, g1_keys::Action::Stop)
+                                        :g1_keys::AvailableKeys("holding, dry-run", g1_keys::Action::Policy,
+                                                                 g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                                                 g1_keys::Action::Stop));
+                }
             }
             g1_control::SetPositionTargets(command,target,motor_kp,motor_kd);
             if(powered) {
