@@ -2,7 +2,8 @@
 
 Controllers communicate through DDS on lo. The selected observation pipeline can
 publish Parkour state/depth or render native metric depth for the task camera.
-The physics engine, base scene and dependencies remain in unitree_mujoco_sim.
+The physics engine, base scene and dependencies are vendored in
+third_party/unitree_mujoco (source: wangsy1999/unitree_mujoco fork, see ORIGIN.md).
 """
 import argparse
 from contextlib import ExitStack
@@ -28,7 +29,9 @@ def resolve_profile(name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mujoco-root", type=Path, required=True)
+    parser.add_argument("--mujoco-root", type=Path,
+                        default=PROJECT_ROOT / "third_party" / "unitree_mujoco",
+                        help="Simulator root (default: vendored third_party/unitree_mujoco)")
     parser.add_argument("--domain", type=int, default=1)
     parser.add_argument("--depth", action=argparse.BooleanOptionalAction, default=True,
                         help="Enable the selected depth pipeline; --no-depth selects DDS-only simulation")

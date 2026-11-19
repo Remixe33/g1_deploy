@@ -32,7 +32,7 @@ cmake --install build
 统一入口 `./g1 <dwaq|parkour|hybrid> <check|sim|real>`，源码根目录和 `install/` 均可用：
 
 - `./g1 dwaq sim --domain 1` / `./g1 parkour sim --domain 1` / `./g1 hybrid sim --domain 1` —— 仿真（先启动 MuJoCo，见下）；`real <网卡>` —— 实机（域 0，默认空跑）。仿真启动时自动识别唯一兼容手柄，`--joystick PATH` 可覆盖；不支持热插拔重连，实机仍只用原配遥控器。
-- 仿真：`python3 apps/simulation/sim.py --mujoco-root /path/to/unitree_mujoco_sim --domain 1`（外部仓库，不在本仓库内；`--terrain`、`--follow`、`--depth-preview` 见 README）。仿真与控制器须同机同用户，一次只运行一个控制器。
+- 仿真：`python3 apps/simulation/sim.py --profile door --domain 1`（仿真器已内置于 `third_party/unitree_mujoco`，`--mujoco-root` 可覆盖；`--terrain`、`--follow`、`--depth-preview` 见 README）。仿真与控制器须同机同用户，一次只运行一个控制器。
 - 网页监控：`bash apps/monitor/monitor.sh <网卡> [HOST] [PORT]`；相机预览：`bash apps/realsense/realsense.sh --host 0.0.0.0 --port 8766`（实机控制前必须退出，避免占用 USB）。
 - 机器人一键配置：`bash scripts/setup_robot.sh`（ARM64 机载，离线装 Python/SDK/ORT 后编译安装）。
 - 直接跑构建产物用长参数，如 `./build/g1_dwaq --check-policy --config apps/dwaq/config/g1_locomotion.json`、`--hardware --domain 0 --interface eth0`。

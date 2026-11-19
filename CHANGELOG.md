@@ -1,5 +1,11 @@
 # 改动总结
 
+## 2026-11-19：仿真器收编为 third_party/unitree_mujoco
+
+- 外部仿真器检出（`wangsy1999/unitree_mujoco` fork @`eeadfae`，含 Parkour 观测钩子）迁移为仓库内 `third_party/unitree_mujoco/`，入库体积 38 MB（清理运行时产物与嵌套 `.git` 后；BSD-3-Clause LICENSE 随迁，来源与提交记录见 ORIGIN.md）。
+- `sim.py --mujoco-root` 改为可选，默认使用仓库内 `third_party/unitree_mujoco`，显式传参仍可覆盖；README/CLAUDE/docs 命令示例同步去除外部路径，废弃 "unitree_mujoco_sim" 文档命名。
+- 验证：`--profile door` 不带 `--mujoco-root` 正常解析内置路径并生成场景；全库 grep 无 `unitree_mujoco_parkour`/`unitree_mujoco_sim` 残留（CHANGELOG 历史条目除外）；C++ 全目标编译不受影响。
+
 ## 2026-11-19：README 按目录分层
 
 - 根 README 精简为项目概览、构建、通用命令、快速启动和文档导航；删除重复的硬件、遥控器、仿真、相机和部署细节。

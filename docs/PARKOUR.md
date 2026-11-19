@@ -71,7 +71,7 @@ bash apps/realsense/realsense.sh --mock --host 127.0.0.1 --port 8766
 终端一（Python 环境需要源仓库的 MuJoCo、NumPy、pygame、unitree_sdk2py）：
 
 ```bash
-python apps/simulation/sim.py --mujoco-root /path/to/unitree_mujoco_sim --domain 1
+python apps/simulation/sim.py --domain 1
 ```
 
 同一仿真也支持 `./build/g1_dwaq --sim --domain 1 --interface lo`；一次只运行一个控制器。旧入口 `apps/parkour/parkour_sim.py` 保持兼容。仅运行 DWaQ 时可加 `--no-depth`。

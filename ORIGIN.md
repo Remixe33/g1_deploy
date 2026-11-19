@@ -64,3 +64,8 @@ Whole head_link is rotated about torso +Y by -back_deg around torso-frame pivot 
 with total mass kept constant. The depth camera follows the same pivot transform (mount point through H,
 optical axis re-pitched) in `apps/simulation/sim.py`'s publisher, mirroring OpenDoor's `realsense.py` mount mapping.
 No asset files are copied for this feature; only the recipe and the constants above are transcribed.
+
+Simulation backend: `third_party/unitree_mujoco/` vendored on 2026-11-19 from the local checkout of the
+`wangsy1999/unitree_mujoco` fork (parkour-observation hooks) at commit `eeadfae` ("暂无使用c++仿真的计划，移除相关代码").
+BSD 3-Clause License (Unitree Robotics) retained at `third_party/unitree_mujoco/LICENSE`; the nested `.git` was
+removed (history remains on the fork's GitHub). `--mujoco-root` overrides the vendored path.

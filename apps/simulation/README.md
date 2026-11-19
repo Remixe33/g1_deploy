@@ -1,15 +1,13 @@
 # MuJoCo 仿真与 door 任务
 
-`sim.py` 按任务档案组合场景、机器人和相机，启动外部 `unitree_mujoco_sim`。仿真器、基础 XML 和网格仍在外部仓库，本项目只维护任务配置和适配层。
+`sim.py` 按任务档案组合场景、机器人和相机，启动内置仿真器 `third_party/unitree_mujoco`（来源见 [../../ORIGIN.md](../../ORIGIN.md)）。仿真器、基础 XML 和网格随仓库提供，本项目只维护任务配置和适配层；`--mujoco-root` 可指向其他等价检出。
 
 ## 快速启动
 
 终端一：
 
 ```bash
-.venv/bin/python apps/simulation/sim.py \
-  --mujoco-root ~/Projects/Unitree/unitree_mujoco_sim \
-  --profile door --follow
+.venv/bin/python apps/simulation/sim.py --profile door --follow
 ```
 
 终端二：
@@ -21,8 +19,7 @@
 不带 `--profile` 时保留原有共享仿真行为：
 
 ```bash
-python3 apps/simulation/sim.py \
-  --mujoco-root /path/to/unitree_mujoco_sim --domain 1
+python3 apps/simulation/sim.py --domain 1
 ./g1 dwaq sim --domain 1       # 或 parkour / hybrid
 ```
 

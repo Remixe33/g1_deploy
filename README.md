@@ -125,7 +125,6 @@ cpack -G TGZ
 
 ```bash
 .venv/bin/python apps/simulation/sim.py \
-  --mujoco-root ~/Projects/Unitree/unitree_mujoco_sim \
   --profile door --follow
 ```
 
@@ -141,7 +140,7 @@ cpack -G TGZ
 
 ```bash
 .venv/bin/python apps/simulation/sim.py \
-  --mujoco-root ~/Projects/Unitree/unitree_mujoco_sim --terrain mixed
+  --terrain mixed
 ./g1 parkour sim --domain 1
 ```
 
@@ -161,4 +160,4 @@ cpack -G TGZ
 - 实机使用 DDS 域 `0` 和连接控制板的网卡，仿真使用正数域和 `lo`，两端域号必须一致。
 - 各程序 JSON 配置仅在启动时读取，修改后须重启生效。
 - D435 单深度传感器同一时刻只能开一路流，原生深度流与 Parkour 策略管线在实机互斥（详见 [相机模块说明](cameras/README.md)）。
-- 外部仿真器仓库按文档统一称为 `unitree_mujoco_sim`；本机若使用其他等价检出路径，以实际路径传 `--mujoco-root` 即可。
+- 仿真器已内置于 `third_party/unitree_mujoco`（来源见 [ORIGIN.md](ORIGIN.md)）；`--mujoco-root` 可指向其他等价检出路径。
