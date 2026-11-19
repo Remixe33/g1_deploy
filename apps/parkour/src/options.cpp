@@ -1,10 +1,11 @@
 #include "g1_parkour_options.h"
+#include "g1_control_profile.h"
 #include <iostream>
 #include <net/if.h>
 #include <stdexcept>
 
 namespace g1_parkour_app {
-Options ParseOptions(int argc, char** argv) {
+Options ParseOptions(int argc, char** argv, const char* task) {
     Options options;
     options.config = G1_PARKOUR_DEFAULT_CONFIG;
     options.program = argv[0];
@@ -21,6 +22,7 @@ Options ParseOptions(int argc, char** argv) {
         } else throw std::invalid_argument("Unknown argument: " + arg);
     }
     g1_control::ValidateRuntimeOptions(options);
+    g1_control::ApplyProfile(options, task, true);
     if (options.hardware && (options.interface == "lo" || !if_nametoindex(options.interface.c_str()) ||
                              !options.joystick.empty()))
         throw std::invalid_argument("Hardware requires a non-loopback robot interface and the Unitree remote");
@@ -31,7 +33,7 @@ void PrintUsage(const std::string&) {
     std::cout<<"g1_parkour --sim [--domain 1 --interface lo]\n"
         <<"g1_parkour --hardware --domain 0 --interface ROBOT_IF\n"
         <<"Common: --config JSON --check-policy; model paths, reset_seconds and hardware limits come from JSON\n"
-        <<"Simulation F710: --joystick DEVICE; Start enable, X reset, A policy, Y zero, B stop. Hardware: Unitree Start enable, X reset, A policy, Select stop; direct sticks.\n"
+        <<"Simulation auto-detects F710; --joystick PATH overrides. Start enable, X reset, A policy, Y zero, B stop. Hardware: Unitree Start enable, X reset, A policy, Select stop; direct sticks. No hotplug reconnect.\n"
         <<"Startup is dry-run. p -> wait -> r previews targets; 9/Start hands over, clears preview, then p -> r again.\n"
         <<"Verify camera pose, torso IMU axes and joint signs before Start handover.\n";
 }

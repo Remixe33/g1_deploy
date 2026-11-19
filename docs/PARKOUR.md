@@ -12,6 +12,7 @@ MuJoCo 仿真器、XML、网格仍放在外部仓库，不内置本仓库；所�
 参考版本：`project-instinct/instinct_onboard@b6965a4202d8dceaf163dd95edb7742ed5d65e38`。
 
 - C++ 实机仅开启 Z16 深度，480×270、60 Hz；RGB 不参与策略输入。独立 Python 预览可用 `--color`，与控制器互斥。
+- 深度流分辨率按相机模块文件（`cameras/*.json` 的 `stream` 节）选择：D435 传感器上限 1280×720@30（Z16），848×480 最高 90 fps，480×270 最高 60 fps（默认 parkour 管线档 `cameras/d435_depth_480x270_60hz.json`）。door 任务档案经 `cameras/d435_rgbd.json` 默认打开 640×480@30 原生流（无缩放/裁剪/修补），经 `g1_camera_check --camera-config` 验证；D435 单深度传感器同一时刻只能开一路流，原生流与 parkour 策略管线在实机互斥（任务档案 `--profile door` 会对此守卫；door 任务现用 dwaq 无冲突）。
 - 实机策略预处理参考该版本 `ParkourAgent.refresh_depth_frame`，当前按需关闭高斯模糊：最近邻缩放至64×36，裁剪 `[18,0,16,16]`，对小于0.2米区域用半径3的 OpenCV INPAINT_NS 补洞，跳过高斯模糊（`gaussian_kernel: 0`），裁剪0–2.5米并归一化至0–1。参数写在 `apps/parkour/config/realsense_parkour.json`。
 - C++ 采集线程按设备 depth scale 将原始 Z16 深度转为独立的米制图，写入进程内最新帧缓存；控制端在50Hz策略观测中执行缩放、裁剪、补洞和归一化，再送入深度历史，高斯模糊默认关闭。策略从策略配置同目录的 `realsense_parkour.json` 加载参数。仿真观测布局与原预处理保留。
 - 深度历史按50Hz策略更新，采样步长按训练时间间隔换算：`round((5/50)/0.02)=5`，不使用相机采集频率换算。保留60项缓冲，取距最新项35/30/25/20/15/10/5/0项（8帧），帧间隔0.1秒、首尾跨度0.7秒，对齐InstinctLab Parkour训练配置。本体观测与模型权重未修改。
@@ -70,7 +71,7 @@ bash apps/realsense/realsense.sh --mock --host 127.0.0.1 --port 8766
 终端一（Python 环境需要源仓库的 MuJoCo、NumPy、pygame、unitree_sdk2py）：
 
 ```bash
-python apps/simulation/sim.py --mujoco-root /path/to/unitree_mujoco --domain 1
+python apps/simulation/sim.py --mujoco-root /path/to/unitree_mujoco_sim --domain 1
 ```
 
 同一仿真也支持 `./build/g1_dwaq --sim --domain 1 --interface lo`；一次只运行一个控制器。旧入口 `apps/parkour/parkour_sim.py` 保持兼容。仅运行 DWaQ 时可加 `--no-depth`。

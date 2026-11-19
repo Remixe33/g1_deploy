@@ -1,0 +1,14 @@
+{
+  "description": "Hybrid DWaQ/Parkour locomotion with the stock G1 and policy depth pipeline",
+  "program": "hybrid",
+  "policy_config": "../apps/hybrid/config/g1_hybrid.json",
+  "scene": {
+    "terrain": "original"
+  },
+  "robot": {
+    "config": "../robots/g1_stock.json"
+  },
+  "camera": {
+    "config": "../cameras/d435_depth_480x270_60hz.json"
+  }
+}

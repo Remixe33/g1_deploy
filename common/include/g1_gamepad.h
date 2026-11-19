@@ -9,13 +9,18 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <deque>
+#include <filesystem>
+#include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <sstream>
 #include <utility>
+#include <vector>
 #include <chrono>
 #include <csignal>
 #include <iostream>
@@ -160,6 +165,43 @@ public:
             name=layout_.name;
             Poll();
         } catch(...) {close(fd_);fd_=-1;throw;}
+    }
+    static std::unique_ptr<Device> OpenAuto(bool locomotion=false,bool require_hold=true) {
+        namespace fs = std::filesystem;
+        std::vector<fs::path> candidates;
+        std::error_code error;
+        if (fs::is_directory("/dev/input/by-id",error)) {
+            for (const auto& entry : fs::directory_iterator("/dev/input/by-id",error)) {
+                auto name = entry.path().filename().string();
+                std::transform(name.begin(),name.end(),name.begin(),
+                               [](unsigned char c) {return static_cast<char>(std::tolower(c));});
+                if (name.find("logitech") != std::string::npos || name.find("f710") != std::string::npos)
+                    candidates.push_back(entry.path());
+            }
+        }
+        if (fs::is_directory("/dev/input",error)) {
+            for (const auto& entry : fs::directory_iterator("/dev/input",error)) {
+                const auto name = entry.path().filename().string();
+                if (name.size() > 2 && name.compare(0,2,"js") == 0 &&
+                    std::all_of(name.begin()+2,name.end(),[](unsigned char c) {return std::isdigit(c) != 0;}))
+                    candidates.push_back(entry.path());
+            }
+        }
+        std::sort(candidates.begin(),candidates.end());
+        std::set<std::string> visited;
+        std::vector<std::unique_ptr<Device>> found;
+        for (const auto& path : candidates) {
+            error.clear();
+            const auto canonical = fs::weakly_canonical(path,error);
+            if (!visited.insert((error ? path : canonical).string()).second) continue;
+            try {
+                found.push_back(std::make_unique<Device>(path.string(),locomotion,require_hold));
+            } catch (const std::exception&) {
+            }
+        }
+        if (found.size() > 1)
+            throw std::runtime_error("Multiple compatible gamepads detected; use --joystick PATH to select one");
+        return found.empty() ? nullptr : std::move(found.front());
     }
     ~Device() {if(fd_>=0) close(fd_);}
     Device(const Device&)=delete;

@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 from g1_shared_memory import SharedFeed
+from depth_frame import DepthFrame
 import struct
 import threading
 
@@ -58,5 +59,12 @@ class ParkourObservationPublisher:
 
     def preview_frame(self):
         with self.preview_lock:
-            return (None if self.latest_depth is None else self.latest_depth.copy(),
-                    self.latest_depth_time)
+            if self.latest_depth is None:
+                return None, self.latest_depth_time
+            raw = self.latest_depth.copy()
+            sequence = self.sequence - 1
+            frame_time = self.latest_depth_time
+        from depth_image import preprocess_depth
+        frame = DepthFrame(raw=raw, model=preprocess_depth(raw),
+                           sequence=sequence, time=frame_time, fps=1.0 / self.period)
+        return frame, frame_time

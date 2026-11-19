@@ -13,13 +13,19 @@
 
 namespace g1_camera {
 using Clock = std::chrono::steady_clock;
-constexpr int kWidth = 480;
-constexpr int kHeight = 270;
-constexpr int kFps = 60;
+
+// 深度流参数（Z16）。默认值沿用 parkour 策略管线；door 任务经配置文件传 1280x720@30。
+struct Config {
+    int width = 480;
+    int height = 270;
+    int fps = 60;
+};
 
 struct DepthFrame {
     uint64_t sequence = 0;
     double captured_at = 0; // 映射到本机 steady_clock 的采集时间，单位秒
+    int width = 0;
+    int height = 0;
     std::shared_ptr<const std::vector<float>> raw_depth; // 图像平面 Z，单位米
 };
 struct Sample {
@@ -54,19 +60,20 @@ public:
 // 从带行间距的 Z16 帧复制为独立米制图，避免借用 SDK 缓冲区跨线程传递。
 inline std::vector<float> DepthMeters(const void* data, int width, int height,
                                       std::size_t stride, float depth_scale) {
-    if (!data || width != kWidth || height != kHeight || stride < kWidth * sizeof(uint16_t) ||
+    if (!data || width <= 0 || height <= 0 ||
+        stride < static_cast<std::size_t>(width) * sizeof(uint16_t) ||
         !std::isfinite(depth_scale) || depth_scale <= 0) {
         throw std::runtime_error("Invalid RealSense raw depth layout/scale");
     }
-    std::vector<float> result(kWidth * kHeight);
+    std::vector<float> result(static_cast<std::size_t>(width) * height);
     const auto* bytes = static_cast<const unsigned char*>(data);
-    for (int row = 0; row < kHeight; ++row) {
-        for (int column = 0; column < kWidth; ++column) {
+    for (int row = 0; row < height; ++row) {
+        for (int column = 0; column < width; ++column) {
             uint16_t value;
             std::memcpy(&value, bytes + row * stride + column * sizeof(value), sizeof(value));
             const float meters = value * depth_scale;
             if (!std::isfinite(meters)) throw std::runtime_error("Invalid RealSense depth");
-            result[row * kWidth + column] = meters;
+            result[static_cast<std::size_t>(row) * width + column] = meters;
         }
     }
     return result;
@@ -76,7 +83,8 @@ inline std::vector<float> DepthMeters(const void* data, int width, int height,
 // SDK 实现在 .cpp，仿真和纯策略测试不需要包含 librealsense 头文件。
 class RealSenseCamera {
 public:
-    RealSenseCamera();
+    using Config = g1_camera::Config;
+    explicit RealSenseCamera(Config config = {});
     ~RealSenseCamera();
     RealSenseCamera(const RealSenseCamera&) = delete;
     RealSenseCamera& operator=(const RealSenseCamera&) = delete;

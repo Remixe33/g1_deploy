@@ -1,0 +1,58 @@
+{
+  "description": "D435 depth and independent RGB configuration. Defaults are 640x480@30. Supported formats come from Intel D400 Series datasheet Table 4-2 (USB 3.1 Gen1).",
+  "stream": {
+    "width": 640,
+    "height": 480,
+    "fps": 30
+  },
+  "pipeline": "none",
+  "simulation_stream": {
+    "width": 640,
+    "height": 480
+  },
+  "scene_camera": "native_depth",
+  "horizontal_fov_deg": 73.26131209393581,
+  "vertical_fov_deg": 58.29,
+  "position_in_torso_m": [0.0487988662332928, 0.01, 0.4378029937970051],
+  "orientation_wxyz_in_torso_forward_left_up": [0.9135367613482678, 0.004363309284746571, 0.4067366430758002, 0.0],
+  "supported_streams": {
+    "depth": {
+      "pixel_format": "Z16",
+      "profiles": [
+        {"width": 1280, "height": 720, "fps": [6, 15, 30]},
+        {"width": 848, "height": 480, "fps": [6, 15, 30, 60, 90]},
+        {"width": 640, "height": 480, "fps": [6, 15, 30, 60, 90]},
+        {"width": 640, "height": 360, "fps": [6, 15, 30, 60, 90]},
+        {"width": 480, "height": 270, "fps": [6, 15, 30, 60, 90]},
+        {"width": 424, "height": 240, "fps": [6, 15, 30, 60, 90]}
+      ]
+    },
+    "rgb": {
+      "pixel_format": "YUY2",
+      "profiles": [
+        {"width": 1920, "height": 1080, "fps": [6, 15, 30]},
+        {"width": 1280, "height": 720, "fps": [6, 15, 30]},
+        {"width": 960, "height": 540, "fps": [6, 15, 30, 60]},
+        {"width": 848, "height": 480, "fps": [6, 15, 30, 60]},
+        {"width": 640, "height": 480, "fps": [6, 15, 30, 60]},
+        {"width": 640, "height": 360, "fps": [6, 15, 30, 60]},
+        {"width": 424, "height": 240, "fps": [6, 15, 30, 60]},
+        {"width": 320, "height": 240, "fps": [6, 30, 60]},
+        {"width": 320, "height": 180, "fps": [6, 30, 60]}
+      ]
+    }
+  },
+  "rgb": {
+    "scene_camera": "native_rgb",
+    "stream": {
+      "width": 640,
+      "height": 480,
+      "fps": 30
+    },
+    "horizontal_fov_deg": 54.81392781904921,
+    "vertical_fov_deg": 42.5,
+    "position_in_depth_optical_m": [0.015, 0.0, 0.0],
+    "orientation_wxyz_in_depth_optical": [1.0, 0.0, 0.0, 0.0],
+    "calibration_source": "nominal 15 mm imager-to-RGB center spacing from Intel D400 Series datasheet Figure 10-9; identity rotation is approximate; not device calibrated"
+  }
+}

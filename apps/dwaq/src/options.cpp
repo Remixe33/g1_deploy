@@ -1,4 +1,5 @@
 #include "g1_dwaq_options.h"
+#include "g1_control_profile.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -39,6 +40,7 @@ Options ParseOptions(int argc, char** argv) {
     }
     if (check_policy) options.mode = Mode::CheckPolicy;
     g1_control::ValidateRuntimeOptions(options);
+    g1_control::ApplyProfile(options, "dwaq", false);
     return options;
 }
 
@@ -50,6 +52,7 @@ void PrintUsage(const std::string& program) {
     std::cout << "Offline inference: --check-policy [--config JSON]\n"
               << "F710: --joystick /dev/input/js0; input-only check: --check-joystick [--joystick DEVICE]\n"
               << "Hardware defaults to Unitree remote: Start enables, X reset, A policy, Select stop.\n"
-              << "Start enable, X reset, A policy; left stick XY/right stick X to move (simulation only, no RB required); Y zero, B exit.\n";
+              << "Start enable, X reset, A policy; left stick XY/right stick X to move (simulation only, no RB required); Y zero, B exit.\n"
+              << "Simulation auto-detects one compatible gamepad; --joystick PATH overrides selection. No hotplug reconnect.\n";
 }
 }  // namespace g1_dwaq_app

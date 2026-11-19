@@ -112,6 +112,8 @@ private:
                 throw std::runtime_error("Parkour reset pose exceeds hardware limits");
         }
         if(!joystick.empty()) gamepad=std::make_unique<g1_gamepad::Device>(joystick,false,false);
+        else if(!hardware) gamepad=g1_gamepad::Device::OpenAuto(false,false);
+        if(gamepad) log.Line()<<"Gamepad: "<<gamepad->Description()<<"\n";
         if(!hardware) {
             log.Line()<<g1_keys::KeyTable(g1_keys::Action::Handover, g1_keys::Action::Reset,
                                           g1_keys::Action::Policy, g1_keys::Action::MoveForward,

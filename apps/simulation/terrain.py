@@ -279,8 +279,67 @@ def _build_door_scene(scene, settings, destination):
     return [("doors", door_x, door_x, 0.0)]
 
 
-def generate_scene(root, selection, destination):
-    """Copy scene/robot definitions into a temporary MJCF and replace only terrain."""
+def _inject_depth_camera(scene, camera, back_deg):
+    """在 torso_link 上注入深度相机及可选的独立 RGB 相机。"""
+    def quaternion_axes(value):
+        quat = np.array([float(component) for component in value], dtype=float)
+        if quat.shape != (4,) or not np.isfinite(quat).all():
+            raise ValueError("Camera orientation must contain four finite values")
+        norm = np.linalg.norm(quat)
+        if norm < 1e-12:
+            raise ValueError("Camera orientation quaternion cannot be zero")
+        w, x, y, z = quat / norm
+        return np.array([[1-2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)],
+                         [2*(x*y+z*w), 1-2*(x*x+z*z), 2*(y*z-x*w)],
+                         [2*(x*z-y*w), 2*(y*z+x*w), 1-2*(x*x+y*y)]])
+
+    mount_pos = np.array([float(value) for value in camera["position_in_torso_m"]])
+    if mount_pos.shape != (3,) or not np.isfinite(mount_pos).all():
+        raise ValueError("Depth camera position must contain three finite values")
+    mount_axes = quaternion_axes(camera["orientation_wxyz_in_torso_forward_left_up"])
+    depth_optical_axes = np.column_stack([-mount_axes[:, 1], -mount_axes[:, 2], mount_axes[:, 0]])
+    torso = next(body for body in scene.iter("body") if body.get("name") == "torso_link")
+    rotation = _head_back_rotation(back_deg)
+    pivot = HEAD_PIVOT_TORSO_M
+
+    def inject(name, mount_position, optical_axes, vertical_fov):
+        if not name or not math.isfinite(vertical_fov) or not 0 < vertical_fov < 179:
+            raise ValueError("Invalid scene camera name or vertical FOV")
+        element_axes = np.column_stack([optical_axes[:, 0], -optical_axes[:, 1], -optical_axes[:, 2]])
+        position = pivot + rotation @ (mount_position - pivot)
+        axes = rotation @ element_axes
+        ET.SubElement(torso, "camera", name=name,
+                      pos=" ".join(f"{value:.9g}" for value in position),
+                      quat=" ".join(f"{value:.9g}" for value in _rotation_to_quat(axes)),
+                      fovy=str(float(vertical_fov)))
+
+    depth_name = camera.get("scene_camera", "depth_camera")
+    inject(depth_name, mount_pos, depth_optical_axes, float(camera["vertical_fov_deg"]))
+    rgb = camera.get("rgb")
+    if rgb is None:
+        return
+    rgb_name = rgb.get("scene_camera", "rgb_camera")
+    if rgb_name == depth_name:
+        raise ValueError("RGB and depth scene cameras must have distinct names")
+    stream = rgb["stream"]
+    for key in ("width", "height", "fps"):
+        if not math.isfinite(float(stream[key])) or float(stream[key]) <= 0:
+            raise ValueError(f"RGB stream {key} must be positive")
+    offset = np.array([float(value) for value in rgb["position_in_depth_optical_m"]])
+    if offset.shape != (3,) or not np.isfinite(offset).all():
+        raise ValueError("RGB position must contain three finite values")
+    rgb_axes = depth_optical_axes @ quaternion_axes(rgb["orientation_wxyz_in_depth_optical"])
+    rgb_position = mount_pos + depth_optical_axes @ offset
+    inject(rgb_name, rgb_position, rgb_axes, float(rgb["vertical_fov_deg"]))
+
+
+def generate_scene(root, selection, destination, head_back=None, depth_camera=None):
+    """Copy scene/robot definitions into a temporary MJCF and replace only terrain.
+
+    head_back 覆盖 terrain.json 的 head.back_deg（任务档案用）；None = 读配置文件。
+    depth_camera 为相机模块 dict（stream/fov/安装位姿），非 None 时把配置的相机
+    元素注入 torso_link（位置经枢轴 H 变换、朝向随头部旋转），供仿真原生深度渲染取景。
+    """
     if selection not in TERRAINS or selection == "original":
         raise ValueError(f"Cannot generate terrain: {selection}")
     robot_dir = Path(root) / "unitree_robots/g1"
@@ -300,9 +359,14 @@ def generate_scene(root, selection, destination):
                 raise ValueError("Terrain dimensions must be finite positive numbers")
 
     validate_numbers(settings)
-    back_deg = float(settings.get("head", {}).get("back_deg", 0.0) or 0.0)
+    configured = settings.get("head", {}).get("back_deg", 0.0)
+    back_deg = float(configured if head_back is None else head_back)
+    if not math.isfinite(back_deg) or back_deg < 0:
+        raise ValueError("Head back angle must be a finite non-negative number")
     if back_deg:
         _apply_head_back(scene, back_deg)
+    if depth_camera:
+        _inject_depth_camera(scene, depth_camera, back_deg)
     if selection == "doors":
         return _build_door_scene(scene, settings, destination)
     for world in scene.findall("worldbody"):

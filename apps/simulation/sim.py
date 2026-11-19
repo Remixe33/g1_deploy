@@ -1,11 +1,12 @@
-"""Start the shared G1 29DOF MuJoCo environment for DWaQ or Parkour.
+"""Start a profile-driven G1 29DOF MuJoCo environment.
 
-Both controllers use DDS on lo. Depth observations are enabled by default so
-Parkour can use the same environment; --no-depth selects DDS-only simulation.
-The physics engine, scene and dependencies remain in unitree_mujoco.
+Controllers communicate through DDS on lo. The selected observation pipeline can
+publish Parkour state/depth or render native metric depth for the task camera.
+The physics engine, base scene and dependencies remain in unitree_mujoco_sim.
 """
 import argparse
 from contextlib import ExitStack
+import json
 import os
 from pathlib import Path
 import runpy
@@ -16,31 +17,68 @@ from tempfile import TemporaryDirectory
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def resolve_profile(name):
+    path = Path(name)
+    if not path.is_absolute() and not path.exists():
+        path = PROJECT_ROOT / "profiles" / f"{name}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Profile not found: {name}")
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mujoco-root", type=Path, required=True)
     parser.add_argument("--domain", type=int, default=1)
     parser.add_argument("--depth", action=argparse.BooleanOptionalAction, default=True,
-                        help="Publish Parkour depth observations (DWaQ ignores them)")
-    parser.add_argument("--depth-preview", action="store_true",
-                        help="Show raw and model-input depth images in the MuJoCo viewer's top-right corner")
+                        help="Enable the selected depth pipeline; --no-depth selects DDS-only simulation")
+    parser.add_argument("--depth-preview", action="store_true", default=None,
+                        help="Show the pipeline's Raw and optional Model outputs "
+                             "(default: on when the task profile carries a camera)")
     parser.add_argument("--fov-debug", action="store_true",
-                        help="Draw 4 translucent rays from the depth camera along the sampled FOV edges (requires --depth-preview)")
+                        help="Draw four depth-camera FOV edge rays (requires --depth-preview)")
     parser.add_argument("--follow", action="store_true",
                         help="Start with a camera tracking the robot torso")
-    parser.add_argument("--terrain", default="original",
+    parser.add_argument("--profile", help="Task profile: name in profiles/ or a JSON path; controls scene, robot and camera defaults")
+    parser.add_argument("--terrain", default=None,
                         choices=("original", "mixed", "platforms", "stones", "gaps", "stairs", "hurdles", "doors"),
-                        help="Obstacle course; mixed places categories in parallel lanes, doors places a pushable "
-                             "door with side walls ahead of the robot (default: original external scene)")
+                        help="Obstacle course; default: original external scene, or the task profile's scene")
     parser.add_argument("--window-backend", choices=("auto", "x11", "wayland"), default="x11",
                         help="Window backend (default: x11); auto prefers X11/XWayland when DISPLAY is available")
     args = parser.parse_args()
+    profile = None
+    if args.profile:
+        profile_path = resolve_profile(args.profile)
+        profile = json.loads(profile_path.read_text())
+        for section, field in (("camera", "config"), ("robot", "config")):
+            referenced = profile.get(section, {}).get(field)
+            if referenced:
+                module_path = Path(referenced)
+                if not module_path.is_absolute():
+                    module_path = profile_path.parent / module_path
+                if not module_path.exists():
+                    parser.error(f"Profile {section} config missing: {module_path}")
+                profile[section][field] = str(module_path)
+                if section == "camera":
+                    profile[section]["module"] = json.loads(module_path.read_text())
+    profile_pipeline = (profile or {}).get("camera", {}).get("pipeline")
+    if not profile_pipeline:
+        profile_pipeline = (profile or {}).get("camera", {}).get("module", {}).get("pipeline")
+    native_camera = bool(profile) and profile_pipeline == "none"
+    if native_camera and args.terrain:
+        parser.error(f"The native camera follows the generated scene; remove --terrain {args.terrain}")
+    profile_terrain = (profile or {}).get("scene", {}).get("terrain")
+    if args.terrain and profile_terrain and args.terrain != profile_terrain:
+        parser.error(f"--terrain {args.terrain} conflicts with the profile scene '{profile_terrain}'; remove --terrain")
+    args.terrain = args.terrain or profile_terrain or "original"
+    if args.depth_preview is None:
+        args.depth_preview = bool(profile and profile.get("camera", {}).get("config"))
     if args.domain <= 0:
         parser.error("Use a positive simulation domain")
     if args.depth_preview and not args.depth:
         parser.error("--depth-preview requires depth; remove --no-depth")
     if args.fov_debug and not args.depth_preview:
-        parser.error("--fov-debug requires --depth-preview")
+        parser.error("--fov-debug requires depth-preview")
 
     root = args.mujoco_root.resolve()
     simulation = root / "simulate_python"
@@ -56,63 +94,63 @@ def main():
     window_backend = args.window_backend
     if window_backend == "auto":
         window_backend = previous_backend or ("x11" if sys.platform == "linux" and os.environ.get("DISPLAY") else "auto")
-    # Select the GLFW wheel library before importing the simulator or camera bridge.
     if window_backend != "auto":
         os.environ["PYGLFW_LIBRARY_VARIANT"] = window_backend
-    bridge = original_publisher = None
     temporary_scene = None
     try:
         sys.path.insert(0, str(simulation))
         sys.path.insert(0, str(Path(__file__).resolve().parent))
+        head_back_override = None
+        if profile:
+            robot_config = profile.get("robot", {}).get("config")
+            if robot_config:
+                head_back_override = json.loads(Path(robot_config).read_text()).get("head_back_deg")
         head_back = 0.0
         if args.terrain != "original":
             from terrain import generate_scene, head_back_deg
-            head_back = head_back_deg()
+            head_back = head_back_deg() if head_back_override is None else float(head_back_override)
             temporary_scene = TemporaryDirectory(prefix="g1-terrain-")
             scene = Path(temporary_scene.name) / "scene.xml"
-            sections = generate_scene(root, args.terrain, scene)
+            depth_camera = profile["camera"]["module"] if native_camera else None
+            sections = generate_scene(root, args.terrain, scene, head_back=head_back_override,
+                                      depth_camera=depth_camera)
             for category, start, end, y in sections:
                 print(f"Terrain {category}: x={start:.2f}..{end:.2f} m, lane center y={y:.2f} m, along +X", flush=True)
         import config
-
-        if args.depth:
-            import parkour_observation as bridge
-            original_publisher = bridge.ParkourObservationPublisher
-            project_config = PROJECT_ROOT / "apps/parkour/config/g1_parkour.json"
-
-            class Publisher(original_publisher):
-                def __init__(self, model, data, port=None, config_path=None):
-                    super().__init__(model, data, config_path=project_config)
-                    if head_back:
-                        from terrain import apply_head_back_camera
-                        apply_head_back_camera(self.adapter, head_back)
-
-            bridge.ParkourObservationPublisher = Publisher
+        from observation_bridge import install_observation_bridge
 
         config.ROBOT = "g1"
         config.ROBOT_SCENE = str(scene)
         config.PHYSICS_BACKEND = "mujoco"
         config.DOMAIN_ID, config.INTERFACE = args.domain, "lo"
         config.USE_JOYSTICK = 0
-        config.PARKOUR_OBSERVATIONS = args.depth
-        config.PARKOUR_OBSERVATION_PORT = None # 外部启动接口的旧参数，不再使用网络
-        config.PARKOUR_DEPTH_PREVIEW = args.depth_preview
-        print(f"Shared G1 simulation: DDS domain {args.domain}, interface lo, "
-              f"depth {'on' if args.depth else 'off'}"
+        if not args.depth:
+            depth_description = "off"
+        elif native_camera:
+            module = profile["camera"]["module"]
+            simulation_stream = module.get("simulation_stream", {"width": 640, "height": 480})
+            depth_description = (f"native Raw{'+RGB' if module.get('rgb') else ''} "
+                                 f"{simulation_stream['width']}x{simulation_stream['height']}"
+                                 f"@{module['stream']['fps']:g}")
+        else:
+            depth_description = "Parkour Raw/Model"
+        print(f"Shared G1 simulation: DDS domain {args.domain}, interface lo, depth {depth_description}"
               + (f", head back {head_back:g} deg" if head_back else "")
+              + (f", profile {args.profile}" if args.profile else "")
               + f", window backend {window_backend}", flush=True)
         sys.argv = [str(simulator)]
         with ExitStack() as extensions:
+            extensions.enter_context(install_observation_bridge(
+                config, args.depth, args.depth_preview, native_camera,
+                profile.get("camera", {}).get("config") if profile else None, head_back))
             if args.follow:
                 from viewer_camera import follow_robot
                 extensions.enter_context(follow_robot())
             if args.depth_preview:
                 from viewer_depth_overlay import install_depth_overlay
-                extensions.enter_context(install_depth_overlay(fov_debug=args.fov_debug))
+                extensions.enter_context(install_depth_overlay(fov_debug=args.fov_debug, native=native_camera))
             runpy.run_path(str(simulator), run_name="__main__")
     finally:
-        if bridge is not None and original_publisher is not None:
-            bridge.ParkourObservationPublisher = original_publisher
         sys.path[:] = previous_path
         sys.argv = previous_argv
         if previous_backend is None:

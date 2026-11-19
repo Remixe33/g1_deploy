@@ -52,6 +52,7 @@ if [[ "$mode" == interfaces ]]; then
     exit 0
 fi
 export LD_LIBRARY_PATH="$package_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export G1_PROFILES_DIR="$package_dir/profiles"
 if [[ "$mode" == monitor ]]; then
     if [[ -x "$package_dir/monitor" ]]; then exec "$package_dir/monitor" "$@"; fi
     exec bash "$package_dir/apps/monitor/monitor.sh" "$@"
@@ -70,7 +71,10 @@ case "$mode" in
         ;;
     joystick)
         (($# <= 1)) || { usage >&2; exit 2; }
-        exec "$controller" --check-joystick --joystick "${1:-/dev/input/js0}"
+        if (($# == 1)); then
+            exec "$controller" --check-joystick --joystick "$1"
+        fi
+        exec "$controller" --check-joystick
         ;;
     read-only|run|real)
         (($# >= 1)) || { usage >&2; exit 2; }

@@ -1,0 +1,4 @@
+{
+  "description": "G1 with the user-adjustable head mount pitched back 20 degrees (door task); simulation rotates the whole head_link about the torso pivot and re-derives the merged inertia.",
+  "head_back_deg": 20.0
+}

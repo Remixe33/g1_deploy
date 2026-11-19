@@ -1,0 +1,14 @@
+{
+  "description": "Parkour locomotion with the stock G1, original external scene and policy depth pipeline",
+  "program": "parkour",
+  "policy_config": "../apps/parkour/config/g1_parkour.json",
+  "scene": {
+    "terrain": "original"
+  },
+  "robot": {
+    "config": "../robots/g1_stock.json"
+  },
+  "camera": {
+    "config": "../cameras/d435_depth_480x270_60hz.json"
+  }
+}

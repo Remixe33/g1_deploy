@@ -15,17 +15,20 @@ struct RealSenseCamera::Impl {
     std::optional<Sample> latest;
     std::exception_ptr error;
     std::thread worker;
+    Config config;
 
-    Impl() {
-        rs2::config config;
-        config.enable_stream(RS2_STREAM_DEPTH, kWidth, kHeight, RS2_FORMAT_Z16, kFps);
+    Impl(Config settings) : config(settings) {
+        rs2::config request;
+        request.enable_stream(RS2_STREAM_DEPTH, config.width, config.height, RS2_FORMAT_Z16, config.fps);
         // SDK 默认可能再启用 RGB；显式只请求深度，不做彩色对齐或设备滤波。
-        const auto profile = pipeline.start(config);
+        const auto profile = pipeline.start(request);
         try {
             const auto stream = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
-            if (stream.width() != kWidth || stream.height() != kHeight || stream.fps() != kFps ||
-                stream.format() != RS2_FORMAT_Z16) {
-                throw std::runtime_error("RealSense requires 480x270 Z16 at 60Hz");
+            if (stream.width() != config.width || stream.height() != config.height ||
+                stream.fps() != config.fps || stream.format() != RS2_FORMAT_Z16) {
+                throw std::runtime_error("RealSense requires " + std::to_string(config.width) + "x" +
+                                         std::to_string(config.height) + " Z16 at " +
+                                         std::to_string(config.fps) + "Hz");
             }
             const auto intrinsics = stream.get_intrinsics();
             for (float coefficient : intrinsics.coeffs) {
@@ -79,6 +82,8 @@ struct RealSenseCamera::Impl {
                 DepthFrame output;
                 output.sequence = ++sequence;
                 output.captured_at = clock.Map(depth.get_timestamp() * .001, received_seconds);
+                output.width = depth.get_width();
+                output.height = depth.get_height();
                 output.raw_depth = std::make_shared<const std::vector<float>>(DepthMeters(
                     depth.get_data(), depth.get_width(), depth.get_height(), depth.get_stride_in_bytes(), depth.get_units()));
                 {
@@ -95,7 +100,7 @@ struct RealSenseCamera::Impl {
         }
     }
 };
-RealSenseCamera::RealSenseCamera() : impl_(std::make_unique<Impl>()) {}
+RealSenseCamera::RealSenseCamera(Config config) : impl_(std::make_unique<Impl>(config)) {}
 RealSenseCamera::~RealSenseCamera() = default;
 bool RealSenseCamera::Supported() { return true; }
 std::optional<Sample> RealSenseCamera::Latest() {
@@ -109,7 +114,7 @@ std::optional<Sample> RealSenseCamera::Latest() {
 #else
 namespace g1_camera {
 struct RealSenseCamera::Impl {};
-RealSenseCamera::RealSenseCamera() {
+RealSenseCamera::RealSenseCamera(Config) {
     throw std::runtime_error("Native RealSense support unavailable: install librealsense2 development files and rebuild");
 }
 RealSenseCamera::~RealSenseCamera() = default;

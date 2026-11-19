@@ -14,6 +14,6 @@ struct Options : g1_control::RuntimeOptions {
 };
 
 // 实现在 src/options.cpp：解析启动参数并检查组合是否合法。
-Options ParseOptions(int argc, char** argv);
+Options ParseOptions(int argc, char** argv, const char* task = "parkour");
 void PrintUsage(const std::string& program);
 }  // namespace g1_parkour_app

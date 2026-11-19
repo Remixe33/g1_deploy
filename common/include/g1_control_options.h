@@ -10,6 +10,8 @@ struct RuntimeOptions {
     int domain = 1;
     std::string interface = "lo";
     std::string config;
+    std::string profile;       // 任务档案名或 JSON 路径；由 g1_control::ApplyProfile 解析
+    std::string camera_config; // 档案 camera.config 解析结果；供相机消费者使用
 };
 struct OptionState {
     bool mode_set = false;
@@ -41,6 +43,7 @@ inline bool ParseRuntimeOption(int argc, char** argv, int& index,
     if (argument == "--interface") options.interface = OptionValue(argc, argv, index, argument);
     else if (argument == "--domain") options.domain = ParseInteger(OptionValue(argc, argv, index, argument));
     else if (argument == "--config") options.config = OptionValue(argc, argv, index, argument);
+    else if (argument == "--profile") options.profile = OptionValue(argc, argv, index, argument);
     else return false;
     state.connection_values = true;
     return true;

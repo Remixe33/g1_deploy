@@ -31,6 +31,7 @@ if [[ "$mode" == help || "$mode" == --help ]]; then
 fi
 [[ -x "$controller" ]] || { echo "Missing executable: $controller" >&2; exit 1; }
 export LD_LIBRARY_PATH="$root_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export G1_PROFILES_DIR="$root_dir/profiles"
 common=(--config "$root_dir/apps/$application/config/g1_$application.json")
 case "$mode" in
     check) exec "$controller" "${common[@]}" --check-policy "$@" ;;

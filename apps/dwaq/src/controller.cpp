@@ -446,9 +446,11 @@ int CheckPolicy(const Options& options) {
 }
 
 int CheckJoystick(const Options& options) {
-    g1_gamepad::Device gamepad(options.joystick.empty() ? "/dev/input/js0" : options.joystick, true, false);
-    std::cout << "Gamepad: " << gamepad.Description() << '\n';
-    g1_gamepad::CheckInput(gamepad, g1_control::stop_requested);
+    auto gamepad = options.joystick.empty() ? g1_gamepad::Device::OpenAuto(true, false) :
+        std::make_unique<g1_gamepad::Device>(options.joystick, true, false);
+    if (!gamepad) throw std::runtime_error("No compatible gamepad detected");
+    std::cout << "Gamepad: " << gamepad->Description() << '\n';
+    g1_gamepad::CheckInput(*gamepad, g1_control::stop_requested);
     return 0;
 }
 
@@ -457,8 +459,10 @@ int RunControlSession(const Options& options) {
     std::unique_ptr<g1_gamepad::Device> gamepad;
     if (!options.joystick.empty()) {
         gamepad = std::make_unique<g1_gamepad::Device>(options.joystick, true, false);
-        std::cout << "Gamepad: " << gamepad->Description() << '\n';
+    } else if (!options.hardware) {
+        gamepad = g1_gamepad::Device::OpenAuto(true, false);
     }
+    if (gamepad) std::cout << "Gamepad: " << gamepad->Description() << '\n';
     const auto config = LoadConfig(options.config);
     std::cout << "Loaded locomotion configuration: " << options.config << '\n';
     std::unique_ptr<g1_policy::Policy> policy;

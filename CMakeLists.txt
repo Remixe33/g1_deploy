@@ -8,6 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(REPOSITORY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(COMMON_INCLUDE "${REPOSITORY_ROOT}/common/include")
+set(G1_PROFILES_DIR "${REPOSITORY_ROOT}/profiles")
 set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}" CACHE PATH "Native CPU ONNX Runtime C/C++ distribution")
 if(NOT ONNXRUNTIME_ROOT)
     message(FATAL_ERROR "Set ONNXRUNTIME_ROOT to the ONNX Runtime distribution matching this onboard CPU")
@@ -56,7 +57,7 @@ else()
     message(STATUS "RealSense SDK not found: simulation/offline only; hardware camera startup will report an error")
 endif()
 add_executable(g1_camera_check apps/realsense/src/camera_check.cpp)
-target_link_libraries(g1_camera_check PRIVATE g1_depth_camera)
+target_link_libraries(g1_camera_check PRIVATE g1_depth_camera yaml-cpp)
 set_target_properties(g1_camera_check PROPERTIES INSTALL_RPATH "$ORIGIN/../lib"
     INSTALL_RPATH_USE_LINK_PATH TRUE)
 install(TARGETS g1_camera_check RUNTIME DESTINATION bin)
@@ -68,7 +69,8 @@ add_executable(g1_dwaq
 target_include_directories(g1_dwaq PRIVATE "${REPOSITORY_ROOT}/apps/dwaq/include" "${COMMON_INCLUDE}" "${ORT_INCLUDE}")
 target_link_libraries(g1_dwaq PRIVATE unitree_sdk2 Boost::boost yaml-cpp "${ORT_LIBRARY}" Threads::Threads)
 target_compile_definitions(g1_dwaq PRIVATE G1_WITH_POLICY
-    G1_POLICY_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/dwaq/config/g1_locomotion.json")
+    G1_POLICY_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/dwaq/config/g1_locomotion.json"
+    G1_PROFILES_DIR="${G1_PROFILES_DIR}")
 add_executable(g1_parkour
     "${REPOSITORY_ROOT}/apps/parkour/src/main.cpp"
     "${REPOSITORY_ROOT}/apps/parkour/src/options.cpp"
@@ -76,7 +78,8 @@ add_executable(g1_parkour
 target_include_directories(g1_parkour PRIVATE "${REPOSITORY_ROOT}/apps/parkour/include" "${COMMON_INCLUDE}" "${ORT_INCLUDE}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(g1_parkour PRIVATE g1_depth_camera unitree_sdk2 Boost::boost yaml-cpp "${ORT_LIBRARY}" ${OpenCV_LIBS} Threads::Threads)
 target_compile_definitions(g1_parkour PRIVATE
-    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/parkour/config/g1_parkour.json")
+    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/parkour/config/g1_parkour.json"
+    G1_PROFILES_DIR="${G1_PROFILES_DIR}")
 add_executable(g1_hybrid
     apps/hybrid/src/main.cpp apps/hybrid/src/options.cpp apps/hybrid/src/controller.cpp
     apps/parkour/src/options.cpp apps/parkour/src/controller.cpp)
@@ -84,7 +87,8 @@ target_include_directories(g1_hybrid PRIVATE apps/hybrid/include apps/dwaq/inclu
     "${COMMON_INCLUDE}" "${ORT_INCLUDE}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(g1_hybrid PRIVATE g1_depth_camera unitree_sdk2 Boost::boost yaml-cpp "${ORT_LIBRARY}" ${OpenCV_LIBS} Threads::Threads)
 target_compile_definitions(g1_hybrid PRIVATE
-    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/hybrid/config/g1_hybrid.json")
+    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/hybrid/config/g1_hybrid.json"
+    G1_PROFILES_DIR="${G1_PROFILES_DIR}")
 set_target_properties(g1_parkour g1_hybrid PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 # Launcher passes package-local resources. Keep ORT local after installation.
 set_target_properties(g1_dwaq PROPERTIES INSTALL_RPATH "$ORIGIN/../lib;${SDK_RUNTIME_DIR}")
@@ -97,6 +101,19 @@ if(UNIX AND NOT APPLE)
 endif()
 
 install(TARGETS g1_dwaq g1_parkour g1_hybrid RUNTIME DESTINATION bin)
+install(DIRECTORY "${G1_PROFILES_DIR}/" DESTINATION profiles)
+install(DIRECTORY "${REPOSITORY_ROOT}/cameras" DESTINATION .)
+install(DIRECTORY "${REPOSITORY_ROOT}/robots" DESTINATION .)
+install(FILES apps/dwaq/README.md DESTINATION apps/dwaq)
+install(FILES apps/parkour/README.md DESTINATION apps/parkour)
+install(FILES apps/hybrid/README.md DESTINATION apps/hybrid)
+install(FILES apps/simulation/README.md DESTINATION apps/simulation)
+install(FILES apps/realsense/README.md DESTINATION apps/realsense)
+install(FILES apps/monitor/README.md DESTINATION apps/monitor)
+install(FILES common/README.md DESTINATION common)
+install(FILES profiles/README.md DESTINATION profiles)
+install(FILES cameras/README.md DESTINATION cameras)
+install(FILES robots/README.md DESTINATION robots)
 install(FILES apps/hybrid/config/g1_hybrid.json DESTINATION apps/hybrid/config)
 install(PROGRAMS apps/hybrid/hybrid.sh DESTINATION . RENAME hybrid)
 install(DIRECTORY "${REPOSITORY_ROOT}/apps/parkour/models" DESTINATION apps/parkour)
@@ -121,6 +138,7 @@ install(FILES "${REPOSITORY_ROOT}/apps/monitor/static/joint_monitor.html" DESTIN
 install(FILES "${REPOSITORY_ROOT}/README.md" "${REPOSITORY_ROOT}/ORIGIN.md" "${REPOSITORY_ROOT}/CHANGELOG.md" DESTINATION .)
 install(FILES "${REPOSITORY_ROOT}/docs/HARDWARE.md" DESTINATION docs)
 install(FILES "${REPOSITORY_ROOT}/docs/WEB.md" DESTINATION docs)
+install(FILES "${REPOSITORY_ROOT}/docs/ROBOT_SETUP.md" DESTINATION docs)
 install(FILES "${REPOSITORY_ROOT}/LICENSE" DESTINATION licenses/project)
 configure_file("${REPOSITORY_ROOT}/cmake/BUILD_INFO.in" "${CMAKE_CURRENT_BINARY_DIR}/BUILD_INFO.txt" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/BUILD_INFO.txt" DESTINATION .)

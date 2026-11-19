@@ -1,5 +1,50 @@
 # 改动总结
 
+## 2026-11-19：README 按目录分层
+
+- 根 README 精简为项目概览、构建、通用命令、快速启动和文档导航；删除重复的硬件、遥控器、仿真、相机和部署细节。
+- 新增 apps/dwaq、apps/parkour、apps/hybrid、apps/simulation、apps/realsense、apps/monitor、profiles、cameras、robots、common 的专题 README，分别维护对应模块的运行与配置说明。
+- 新文档纳入 CMake 安装，保留源码目录和安装目录中的相对链接；仿真启动器仍只从源码运行。
+
+## 2026-11-19：仿真手柄启动时自动识别
+
+- DWaQ、Parkour、Hybrid 和 `g1 joystick` 在不提供 `--joystick` 时自动识别唯一兼容手柄；显式设备路径保持优先，检测到多个兼容手柄时要求明确选择，无兼容手柄时使用键盘。
+- 自动识别仅在启动时执行，不支持热插拔重连；设备拔出或读取失败仍进入停止流程，实机仍只使用原配遥控器。
+- 验证：全目标构建安装通过；无参数 `g1 joystick` 自动识别当前 Xbox 兼容手柄；door 仿真不传 `--joystick` 时同样自动识别并完成接管、复位、策略启动与停止。
+
+## 2026-11-19：D435 双视角朝向、视场与官方流格式
+
+- 修正场景相机坐标基：RealSense 光学坐标（右、下、前）先转换为 MuJoCo 相机坐标（右、上、后），再写入 XML。此前两路相机朝向后上方，现朝向机器人前方并包含门和地面。
+- `cameras/d435_rgbd.json` 分别记录官方 USB 3.1 Gen1 深度 Z16 与 RGB YUY2 的全部标称分辨率和帧率；实机、仿真深度和 RGB 默认均选择 640×480@30，其他格式可按需配置。
+- 仿真水平视场按垂直视场与实际画幅计算：默认 4:3 下深度为 73.2613°×58.29°、RGB 为 54.8139°×42.5°，不混用 16:9 标称水平视场。切换分辨率时自动重算。
+- 文档补充官方参数来源：内参和外参由设备标定数据经 SDK `get_intrinsics()`、`get_extrinsics_to()` 获取，实际流格式由 `get_stream_profiles()` 枚举；高级模式 JSON 视觉预设不等同于标定文件。
+- 验证：28 组深度和 32 组 RGB 官方流格式组合校验通过，非法格式拒绝；默认 Raw/RGB 均为 640×480，前向视场与配置一致。全目标构建、安装和三类离线检查通过；door 完成 DWaQ 接管、复位、0.2 m/s 前进和停止，生成默认格式截图与运动视频供目检。
+
+## 2026-11-18：door 独立 RGB/Depth 双视角
+
+- 相机模块新增可选 RGB 配置：独立场景相机、640×480@30、D435 RGB 视场及深度光学坐标系外参。15 mm 水平间距来自 Intel D400 数据手册图 10-9；旋转为近似值，明确未做目标设备标定，后续可由 RealSense SDK `get_extrinsics_to()` 替换。
+- 场景生成按 torso 深度安装变换与深度到 RGB 外参注入两个相机，统一帧增加可选 RGB；同一发布器在主线程同步渲染两路图像，共用帧序号和仿真时间，未配置 RGB 时保持纯深度行为。
+- door 显示独立 RGB/Depth 双窗口，保持宽高比并限制总尺寸；Parkour Raw/Model 双窗口不变。本阶段不实现逐像素对齐或双目噪声模型。
+- 验证：编译模型测得 RGB 相对深度偏移为 [0.015, 0, 0] m，旋转与配置一致；实际生成 640×480 float32 Raw 和三通道 uint8 RGB，序号和时间一致。door 完成 DWaQ 接管、复位、0.2 m/s 前进与停止，保存双视角截图和运动视频。
+
+## 2026-11-18：仿真任务与统一深度管线解耦
+
+- 新增 dwaq、parkour、hybrid 任务档案；door 显式引用当前 DWaQ 配置。文档明确 door 现阶段只使用 DWaQ 仿真移动，未来将替换为分离上下肢或统一全身策略，本阶段不实现门任务状态机或开门决策。
+- 外部仿真器文档路径统一为 `unitree_mujoco_sim`，调试脚本支持 `--mujoco-root`；项目不自动重命名外部目录，本机功能验证仍使用现有等价路径 `unitree_mujoco_parkour`。
+- 仿真观测拆为独立兼容层：door 不再继承项目 Parkour 发布器或读取 Parkour 策略配置；原生相机名由相机模块提供。原生渲染保留在查看器主线程，避免物理线程 GLX 上下文错误。
+- 深度帧统一携带 Raw、可选 Model、序号、时间和频率。Parkour 保持 Raw 36×64 / Model 18×32 双窗口；door 仅显示 Raw 640×480@30 单窗口，无 Model 和裁剪框。Raw 单窗口按原比例等比缩放，最大 480×360，且不超过视口宽 1/3、高 1/2。
+- Hybrid 档案守卫改为 `program=hybrid`；安装目录修正 profiles 嵌套及档案名与启动脚本同名时的解析冲突，启动入口显式提供本包 profiles 路径。
+- 验证：全目标构建和安装通过；源码及安装后 dwaq/parkour/hybrid 离线检查通过；门场景离线检查通过；原生渲染实测 640×480、30 Hz、无 Model。DWaQ 原场景、Parkour、Hybrid 仿真接管/复位/策略运行通过；door 完成 DWaQ 接管、复位、0.2 m/s 前进与清零，保存跟随视角视频。目检确认 door Raw 单窗口等比缩小，Parkour/Hybrid 双窗口保持原布局。
+
+## 2026-11-18：任务档案模块化与 door 任务原生深度相机
+
+- 模块化原则落地：策略程序 × 场景资产 × 机器人配置 × 相机参数四轴可独立选择组合；**模块文件按自身命名，不绑定任务名**，任务组合只发生在 `profiles/`。
+- 新增目录与文件：`profiles/door.json`（door 任务 = dwaq + doors 场景 + 头部后仰机器人 + 原生 720p 相机；door 现用 dwaq 以避开实机单深度流互斥）；`cameras/d435_depth_1280x720_30hz.json` 与 `cameras/d435_depth_480x270_60hz.json`（相机模块，`pipeline` 字段单一事实来源）；`robots/g1_stock.json` 与 `robots/g1_head_back_20deg.json`（机器人双轨：标准头 / 可调头部转轴后仰 20°，分别用于不同任务）。
+- 档案解析与守卫收口 `common/include/g1_control_profile.h`：program 守卫、`policy_config` 覆盖、相机/机器人模块引用解析、实机单深度流互斥守卫（`pipeline: "none"` + 依赖深度的程序 + hardware 启动即报错）。共享解析器（`g1_control_options.h`）新增 `--profile`。
+- 相机库参数化（`g1_depth_camera`）：480×270@60 三个编译期常量改为 `Config` 构造参数，`DepthFrame` 携带分辨率元数据，`DepthMeters` 按参数校验分配；`g1_camera_check` 新增 `--camera-config`（720p 原生流的内部消费者，实机验证入口）。`realsense_parkour.json` 回归单一职责（parkour 策略预处理+几何），流参数由 cameras/ 模块承担。
+- 仿真接入：`sim.py --profile` 决定场景/机器人/预览默认；`terrain.py::generate_scene` 新增 `head_back` 可选覆盖参数（缺省回落 terrain.json）。
+- 验证：全目标编译通过（含 stub）；守卫矩阵通过（dwaq+door 放行、parkour+door 拒绝、档案缺失报错）；场景一致性逐字节通过（robot 模块语义 vs terrain.json 语义）；camera_check 配置接线贯通（实机 720p 帧统计待上架验证）；`sim.py --profile door` 启动行含 profile 且场景/头部角度正确；旧路径与已删符号 grep 无残留。
+
 ## 2026-11-18：按键说明收口为词典并表格化
 
 - 按键语义收口为词典（单一事实来源）：新增 `common/include/g1_key_dictionary.h`（动作→键位/说明的 `Lookup` 词典与 `KeyTable/AvailableKeys` 渲染）与 `common/include/g1_text_table.h`（Unicode 两列表格渲染器）。调用点只写动作名，键位写法与说明仅维护一处；键位统一"键盘 / 手柄"顺序（R / A、X / Y 等）。
