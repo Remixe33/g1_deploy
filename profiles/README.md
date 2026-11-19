@@ -20,8 +20,6 @@
 - `hybrid.json`：混合策略 + 标准机器人 + Parkour 相机管线。
 - `door.json`：门场景 + 后仰机器人 + D435 RGB/Depth + 当前 DWaQ。
 
-door 当前仅使用 DWaQ 仿真移动。未来将用分离上下肢或统一全身策略替换它，当前不实现门任务状态机或开门决策。
-
 ## 字段
 
 ```json
