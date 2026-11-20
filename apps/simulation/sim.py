@@ -73,8 +73,9 @@ def main():
     if not profile_pipeline:
         profile_pipeline = (profile or {}).get("camera", {}).get("module", {}).get("pipeline")
     native_camera = bool(profile) and profile_pipeline == "none"
+    profile_has_camera = bool(profile) and bool(profile.get("camera", {}).get("config"))
     data_web_source = None
-    if native_camera and args.data_web:
+    if profile_has_camera and args.data_web and args.depth:
         sys.path.insert(0, str(PROJECT_ROOT / "apps" / "monitor"))
         from camera_sources import SimSource
         data_web_source = SimSource()
@@ -120,12 +121,12 @@ def main():
             if robot_config:
                 head_back_override = json.loads(Path(robot_config).read_text()).get("head_back_deg")
         head_back = 0.0
+        depth_camera = profile["camera"]["module"] if native_camera else None
         if args.terrain != "original":
             from terrain import generate_scene, head_back_deg
             head_back = head_back_deg() if head_back_override is None else float(head_back_override)
             temporary_scene = TemporaryDirectory(prefix="g1-terrain-")
             scene = Path(temporary_scene.name) / "scene.xml"
-            depth_camera = profile["camera"]["module"] if native_camera else None
             sections = generate_scene(root, args.terrain, scene, head_back=head_back_override,
                                       depth_camera=depth_camera)
             for category, start, end, y in sections:

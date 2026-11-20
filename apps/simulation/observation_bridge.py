@@ -39,6 +39,12 @@ def install_observation_bridge(config, enabled, preview, native, camera_config, 
                     from terrain import apply_head_back_camera
                     apply_head_back_camera(self.adapter, head_back)
 
+            def preview_frame(self):
+                frame, sim_time = super().preview_frame()
+                if frame is not None and frame_sink is not None:
+                    frame_sink(frame)  # 数据网页信箱（主/查看器线程调用）
+                return frame, sim_time
+
         bridge.ParkourObservationPublisher = Publisher
     try:
         yield

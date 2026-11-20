@@ -29,15 +29,21 @@ def _frame(raw, rgb, sequence, time, fps):
 
 
 class SimSource:
-    """仿真注入源：渲染在仿真主/查看器线程完成（deposit），本类只做信箱。"""
+    """仿真注入源：渲染在仿真主/查看器线程完成（deposit），本类只做信箱。
+
+    窗格随相机模块 pipeline 推导：none → rgb+depth（door 原生）；parkour → raw+model。
+    """
 
     def __init__(self):
         self._condition = threading.Condition()
         self._frame = None
         self._module = None
+        self.panes = ["depth"]
 
     def set_module(self, module):
         self._module = module
+        pipeline = module.get("pipeline")
+        self.panes = ["rgb", "depth"] if pipeline == "none" else ["raw", "model"]
 
     def deposit(self, frame):
         """仿真主线程渲染后调用；DepthFrame 为冻结数据类，跨线程传递天然安全。"""
@@ -66,7 +72,8 @@ class SimSource:
         module = self._module or {}
         stream = module.get("simulation_stream", module.get("stream", {}))
         return {"source": "simulation", "width": stream.get("width", 640),
-                "height": stream.get("height", 480), "fps": stream.get("fps", 30)}
+                "height": stream.get("height", 480), "fps": stream.get("fps", 30),
+                "panes": list(self.panes)}
 
     def close(self):
         pass

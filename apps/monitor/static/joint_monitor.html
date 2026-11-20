@@ -16,7 +16,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:20px;fl
 .imu-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}.imu-card{padding:16px}.imu-card h2{font-size:14px;color:#a3b4cd;margin:0 0 12px}.imu-vector{display:flex;gap:16px;flex-wrap:wrap}.imu-vector span{color:#91a0b5}.imu-vector b{display:block;margin-top:4px;color:#dce5f1;font-size:17px;font-variant-numeric:tabular-nums}@media(max-width:1000px){.imu-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:500px){.imu-grid{grid-template-columns:1fr}}
 @media(max-width:1000px){.layout{grid-template-columns:1fr}.scroll{max-height:55vh}body{padding:16px}.stats{gap:20px;flex-wrap:wrap}}:focus-visible{outline:2px solid #63ddcc;outline-offset:2px}
 .torso-grid{grid-template-columns:repeat(5,minmax(0,1fr))}@media(max-width:1200px){.torso-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:500px){.torso-grid{grid-template-columns:1fr}}
-.cam-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.cam-pane{display:none}#record.rec{color:#f87171;border-color:#b45c53}@media(max-width:1000px){.cam-grid{grid-template-columns:1fr}}</style>
+.cam-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}#record.rec{color:#f87171;border-color:#b45c53}@media(max-width:1000px){.cam-grid{grid-template-columns:1fr}}</style>
 </head>
 <body>
 <header><div><h1>G1 <span style="color:#63ddcc">/</span> 机器人数据监控</h1><p>查看关节状态、跟踪误差、相机画面与数据录制</p></div><div id="status" class="status" role="status">正在连接…</div></header>
@@ -32,11 +32,8 @@ header{display:flex;justify-content:space-between;align-items:center;gap:20px;fl
 <div class="panel imu-card"><h2 id="imu-accelerometer-label">加速度 / m/s²</h2><div class="imu-vector"><span>X<b id="imu-accelerometer-0">—</b></span><span>Y<b id="imu-accelerometer-1">—</b></span><span>Z<b id="imu-accelerometer-2">—</b></span></div></div>
 <div class="panel imu-card"><h2 id="imu-quaternion-label">四元数 / w, x, y, z</h2><div class="imu-vector"><span>W<b id="imu-quaternion-0">—</b></span><span>X<b id="imu-quaternion-1">—</b></span><span>Y<b id="imu-quaternion-2">—</b></span><span>Z<b id="imu-quaternion-3">—</b></span></div></div>
 </section>
-<h2 style="font-size:18px">相机 · RGB / Depth <span id="camera-status" class="status">未启用</span><button id="record" class="cam-pane" style="margin-left:14px">开始录制</button><span id="record-status" style="margin-left:12px;color:#91a0b5"></span></h2>
-<section class="cam-grid" aria-label="相机实时画面" style="margin-bottom:20px">
-<div class="panel cam-pane"><h2 style="font-size:14px;color:#a3b4cd;margin:0;padding:12px 16px 0">RGB</h2><img id="cam-rgb" alt="RGB 相机实时画面" style="width:100%;display:block;background:#0b1422"></div>
-<div class="panel cam-pane"><h2 style="font-size:14px;color:#a3b4cd;margin:0;padding:12px 16px 0">Depth · 0–2.5 m 伪彩</h2><img id="cam-depth" alt="Depth 相机实时画面" style="width:100%;display:block;background:#0b1422"></div>
-</section>
+<h2 style="font-size:18px">相机 <span id="camera-status" class="status">未启用</span><button id="record" style="margin-left:14px;display:none">开始录制</button><span id="record-status" style="margin-left:12px;color:#91a0b5"></span></h2>
+<section id="camera-panes" class="cam-grid" aria-label="相机实时画面" style="margin-bottom:20px;display:none"></section>
 <main class="layout">
 <section class="panel" aria-label="关节数据"><div class="toolbar"><input id="search" placeholder="搜索关节，例如 elbow" aria-label="搜索关节"><select id="unit" aria-label="角度单位"><option value="rad">弧度 rad</option><option value="deg">角度 °</option></select><button id="pause">暂停显示</button></div>
 <div class="scroll"><table><thead><tr><th>绘图</th><th>关节 / DDS ID</th><th>Enable</th><th id="qHead">角度 rad</th><th>目标</th><th>误差</th><th id="vHead">速度 rad/s</th><th>力矩 Nm</th><th>Kp / Kd</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" class="empty">等待机器人数据…</div></div></section>
@@ -179,17 +176,27 @@ async function pollStatus(){
   const res=await fetch('/api/status'); if(!res.ok) return;
   const s=await res.json();
   const cam=s.camera||{};
-  const online=!!cam.online&&cam.source&&cam.source!=='none';
+  const panes=cam.panes||[];
+  const online=!!cam.online&&panes.length>0;
   const badge=$('camera-status');
   badge.textContent=online?`${cam.source} · ${cam.width}x${cam.height}@${cam.fps}`:'未启用';
   badge.className='status'+(online?' live':'');
-  document.querySelectorAll('.cam-pane').forEach(el=>el.style.display=online?'block':'none');
-  $('record').style.display=online?'inline-block':'none';
-  for (const [id, enabled, stream] of [['cam-rgb', online, 'rgb'], ['cam-depth', online, 'depth']]) {
-      const el = $(id), src = `/${stream}.mjpg`;
-      if (enabled) { if (el.getAttribute('src') !== src) el.src = src; }
-      else if (el.hasAttribute('src')) el.removeAttribute('src');
+  const PANE_LABEL={rgb:'RGB',depth:'Depth',raw:'Depth Raw 36×64',model:'Model 18×32'};
+  const wrap=$('camera-panes');
+  const wanted=(panes||[]).join(',');
+  if (wrap.dataset.panes!==wanted){  // 窗格集合变化时重建；不变时保持 img 流不闪断
+    wrap.dataset.panes=wanted; wrap.innerHTML='';
+    for (const pane of wanted.split(',')) if (pane) {
+      const card=document.createElement('div'); card.className='panel';
+      const head=document.createElement('h2'); head.style.cssText='font-size:14px;color:#a3b4cd;margin:0;padding:12px 16px 0';
+      head.textContent=PANE_LABEL[pane]||pane;
+      const img=document.createElement('img'); img.alt=PANE_LABEL[pane]||pane;
+      img.style.cssText='width:100%;display:block;background:#0b1422'; img.src=`/${pane}.mjpg`;
+      card.appendChild(head); card.appendChild(img); wrap.appendChild(card);
+    }
   }
+  wrap.style.display=online?'grid':'none';
+  $('record').style.display=online?'inline-block':'none';
   const rec=s.recording||{};
   if(recording!==!!rec.active){recording=!!rec.active;$('record').textContent=recording?'停止录制':'开始录制';$('record').classList.toggle('rec',recording);}
   $('record-status').textContent=rec.active?`录制中 · ${rec.frames||0} 帧 · ${rec.state_rows||0} 行状态`:(rec.dir?`已保存：${rec.dir}`:'');

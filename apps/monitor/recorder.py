@@ -21,6 +21,7 @@ class Recorder:
     def __init__(self, out_dir, source_info, meta_extra=None, intrinsics=None):
         self.dir = Path(out_dir)
         (self.dir / "pointcloud").mkdir(parents=True, exist_ok=True)
+        (self.dir / "model").mkdir(parents=True, exist_ok=True)
         self.source_info = dict(source_info)
         self.meta_extra = dict(meta_extra or {})
         self.intrinsics = dict(intrinsics or {})
@@ -29,6 +30,7 @@ class Recorder:
         self.started_at = time.monotonic()
         self.wall_started = time.time()
         self.frames = 0
+        self.model_frames = 0
         self.gaps = 0
         self.last_sequence = None
         self.state_rows = 0
@@ -68,6 +70,12 @@ class Recorder:
             index = self.frames
             points, colors = self._backproject(raw, getattr(frame, "rgb", None))
             self._write_ply(self.dir / "pointcloud" / f"{index:06d}.ply", points, colors)
+            model = getattr(frame, "model", None)
+            if model is not None:
+                model_png = np.clip(np.nan_to_num(np.asarray(model), nan=0., posinf=1.) * 255,
+                                    0, 255).astype(np.uint8)
+                cv2.imwrite(str(self.dir / "model" / f"{index:06d}.png"), model_png)
+                self.model_frames += 1
             colorized = cv2.applyColorMap(
                 np.rint((1 - np.clip(np.nan_to_num(raw / DEPTH_RANGE_M, posinf=1.), 0, 1)) * 255).astype(np.uint8),
                 cv2.COLORMAP_TURBO)
@@ -173,7 +181,8 @@ class Recorder:
         if self._state_file is not None:
             self._state_file.close()
         meta = {"source": self.source_info, "duration_s": round(duration, 3),
-                "frames": self.frames, "sequence_gaps": self.gaps,
+                "frames": self.frames, "model_frames": self.model_frames,
+                "sequence_gaps": self.gaps,
                 "pointcloud": {"format": "ply_binary_little_endian",
                                "frame": "depth_optical (x right, y down, z forward)",
                                "intrinsics": self.intrinsics,

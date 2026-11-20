@@ -102,8 +102,8 @@ class JointMonitor:
                 if path == "/api/stream":
                     self.stream()
                     return
-                if path in ("/rgb.mjpg", "/depth.mjpg"):
-                    monitor.mjpeg(self, "rgb" if path == "/rgb.mjpg" else "depth")
+                if path in ("/rgb.mjpg", "/depth.mjpg", "/raw.mjpg", "/model.mjpg"):
+                    monitor.mjpeg(self, path[1:-5])
                     return
                 if path in ("/", "/index.html"):
                     content, mime = monitor.html, "text/html; charset=utf-8"
@@ -208,7 +208,8 @@ class JointMonitor:
         return meta
 
     def camera_loop(self):
-        """相机线程：以源帧率读取全量帧（录制备份），并维护 MJPEG 信箱（预览节拍）。"""
+        """相机线程：以源帧率读取全量帧（录制备份），并按源窗格维护 MJPEG 信箱。"""
+        panes = getattr(self.camera_source, "panes", ["depth"]) if self.camera_source is not None else []
         last_preview = 0.0
         while not self.stopping.is_set():
             try:
@@ -225,21 +226,33 @@ class JointMonitor:
             except Exception as error:
                 print(f"Recorder error: {error}", flush=True)
             now = time.monotonic()
-            if now >= last_preview + 1.0 / 15:
-                last_preview = now
-                raw = np.asarray(frame.raw)
-                level = np.rint((1 - np.clip(np.nan_to_num(raw / DEPTH_RANGE_M, posinf=1.), 0, 1)) * 255).astype(np.uint8)
-                depth_jpeg = cv2.imencode(".jpg", cv2.applyColorMap(level, cv2.COLORMAP_TURBO),
-                                          [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
-                rgb_jpeg = None
-                if frame.rgb is not None:
-                    rgb_jpeg = cv2.imencode(".jpg", cv2.cvtColor(np.asarray(frame.rgb), cv2.COLOR_RGB2BGR),
-                                            [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
-                with self.camera_lock:
-                    self.camera_jpegs = {"depth": depth_jpeg, "rgb": rgb_jpeg,
-                                         "sequence": frame.sequence}
-                    self.camera_sequence += 1
-                    self.camera_lock.notify_all()
+            if now < last_preview + 1.0 / 15:
+                continue
+            last_preview = now
+            jpegs = {}
+            for pane in panes:
+                image = self.pane_image(frame, pane)
+                if image is None:
+                    continue
+                ok, buffer = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    jpegs[pane] = buffer.tobytes()
+            with self.camera_lock:
+                self.camera_jpegs = jpegs
+                self.camera_sequence += 1
+                self.camera_lock.notify_all()
+
+    @staticmethod
+    def pane_image(frame, pane):
+        """窗格键 → BGR 预览图：rgb 原样；depth/raw 深度伪彩；model 归一化伪彩。"""
+        if pane == "rgb" and getattr(frame, "rgb", None) is not None:
+            return cv2.cvtColor(np.asarray(frame.rgb), cv2.COLOR_RGB2BGR)
+        if pane == "model" and getattr(frame, "model", None) is not None:
+            values = np.clip(np.nan_to_num(np.asarray(frame.model), nan=0., posinf=1.), 0., 1.)
+        else:
+            values = np.clip(np.nan_to_num(np.asarray(frame.raw) / DEPTH_RANGE_M, posinf=1.), 0., 1.)
+        level = np.rint(values * 255).astype(np.uint8)
+        return cv2.applyColorMap(level, cv2.COLORMAP_TURBO)
 
     def mjpeg(self, handler, key):
         handler.send_response(200)
@@ -274,7 +287,8 @@ class JointMonitor:
         recording = self.recorder.recording if self.recorder is not None else False
         return {"camera": {**source_info,
                            "online": jpegs is not None,
-                           "sequence": self.camera_sequence},
+                           "sequence": self.camera_sequence,
+                           "panes": sorted(jpegs.keys())},
                 "recording": {"active": recording,
                               "dir": str(self.recorder.dir) if recording else None,
                               "frames": self.recorder.frames if self.recorder is not None else 0,
