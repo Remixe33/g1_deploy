@@ -71,9 +71,13 @@ class SimSource:
     def info(self):
         module = self._module or {}
         stream = module.get("simulation_stream", module.get("stream", {}))
-        return {"source": "simulation", "width": stream.get("width", 640),
-                "height": stream.get("height", 480), "fps": stream.get("fps", 30),
-                "panes": list(self.panes)}
+        size = {"width": stream.get("width", 640), "height": stream.get("height", 480)}
+        pane_sizes = dict.fromkeys(self.panes, size)
+        rgb_stream = module.get("rgb", {}).get("stream")
+        if "rgb" in pane_sizes and rgb_stream:
+            pane_sizes["rgb"] = {"width": rgb_stream["width"], "height": rgb_stream["height"]}
+        return {"source": "simulation", **size, "fps": stream.get("fps", 30),
+                "panes": list(self.panes), "pane_sizes": pane_sizes}
 
     def close(self):
         pass

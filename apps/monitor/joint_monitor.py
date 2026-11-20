@@ -244,15 +244,19 @@ class JointMonitor:
 
     @staticmethod
     def pane_image(frame, pane):
-        """窗格键 → BGR 预览图：rgb 原样；depth/raw 深度伪彩；model 归一化伪彩。"""
+        """生成供 JPEG 编码的 BGR 预览图。"""
         if pane == "rgb" and getattr(frame, "rgb", None) is not None:
             return cv2.cvtColor(np.asarray(frame.rgb), cv2.COLOR_RGB2BGR)
         if pane == "model" and getattr(frame, "model", None) is not None:
             values = np.clip(np.nan_to_num(np.asarray(frame.model), nan=0., posinf=1.), 0., 1.)
         else:
             values = np.clip(np.nan_to_num(np.asarray(frame.raw) / DEPTH_RANGE_M, posinf=1.), 0., 1.)
-        level = np.rint(values * 255).astype(np.uint8)
-        return cv2.applyColorMap(level, cv2.COLORMAP_TURBO)
+        # 与 MuJoCo 预览和深度录像一致：近处用暖色，远处用冷色。
+        level = np.rint((1 - values) * 255).astype(np.uint8)
+        image = cv2.applyColorMap(level, cv2.COLORMAP_TURBO)
+        if pane == "raw":
+            image[~np.isfinite(frame.raw)] = 0  # Parkour 未命中的射线显示为黑色。
+        return image
 
     def mjpeg(self, handler, key):
         handler.send_response(200)
