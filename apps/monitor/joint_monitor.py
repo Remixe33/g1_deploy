@@ -1,4 +1,4 @@
-"""Standalone G1 29DOF DDS subscriber and local read-only web monitor."""
+"""G1 29DOF 机器人数据可视化与录制服务（DDS 订阅 + 相机源 + 录制，只读不改控制）。"""
 import argparse
 import math
 import json
@@ -7,6 +7,14 @@ from pathlib import Path
 import threading
 import time
 from urllib.parse import urlsplit
+
+import cv2
+import numpy as np
+
+from camera_sources import MockSource, RealSenseSource, SimSource, load_camera_module
+from recorder import Recorder
+
+DEPTH_RANGE_M = 2.5  # 伪彩归一化区间，与录制一致
 
 
 JOINT_NAMES = (
@@ -45,7 +53,9 @@ def read_imu_state(source):
 
 
 class JointMonitor:
-    def __init__(self, host="127.0.0.1", port=8765, rate_hz=50):
+    def __init__(self, host="127.0.0.1", port=8765, rate_hz=50,
+                 camera_source=None, camera_module=None, record_root="logs/recordings",
+                 record_start=False):
         if not math.isfinite(rate_hz) or rate_hz <= 0:
             raise ValueError("Joint monitor rate must be positive")
         self.period = 1.0 / rate_hz
@@ -70,6 +80,21 @@ class JointMonitor:
         self.next_capture = self.started_at
         self.html = (Path(__file__).parent / "static" / "joint_monitor.html").read_bytes()
         monitor = self
+        self.camera_source = camera_source
+        self.camera_module = camera_module or {}
+        self.record_root = Path(record_root)
+        self.recorder = None
+        if record_start:
+            self.start_recording()
+        # 相机 MJPEG 信箱：相机线程写入编码后的 JPEG，端点流式推送。
+        self.camera_lock = threading.Condition()
+        self.camera_jpegs = None
+        self.camera_sequence = 0
+        self.camera_thread = None
+        self.subscribers = []
+        if camera_source is not None:
+            self.camera_thread = threading.Thread(target=self.camera_loop,
+                                                  name="camera-source", daemon=True)
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -77,12 +102,45 @@ class JointMonitor:
                 if path == "/api/stream":
                     self.stream()
                     return
+                if path in ("/rgb.mjpg", "/depth.mjpg"):
+                    monitor.mjpeg(self, "rgb" if path == "/rgb.mjpg" else "depth")
+                    return
                 if path in ("/", "/index.html"):
                     content, mime = monitor.html, "text/html; charset=utf-8"
                 elif path == "/api/joints":
                     with monitor.lock:
                         state = monitor.snapshot_locked()
                     content = json.dumps(state, allow_nan=False).encode()
+                    mime = "application/json; charset=utf-8"
+                elif path == "/api/status":
+                    with monitor.lock:
+                        state = monitor.snapshot_locked()
+                    state.update(monitor.camera_status())
+                    content = json.dumps(state, allow_nan=False).encode()
+                    mime = "application/json; charset=utf-8"
+                else:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                try:
+                    self.wfile.write(content)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+            def do_POST(self):
+                path = urlsplit(self.path).path
+                if path == "/api/record/start":
+                    monitor.start_recording()
+                    content = json.dumps({"recording": True,
+                                          "dir": str(monitor.recorder.dir)}, ensure_ascii=False).encode()
+                    mime = "application/json; charset=utf-8"
+                elif path == "/api/record/stop":
+                    meta = monitor.stop_recording()
+                    content = json.dumps({"recording": False, "meta": meta}, ensure_ascii=False).encode()
                     mime = "application/json; charset=utf-8"
                 else:
                     self.send_error(404)
@@ -129,10 +187,123 @@ class JointMonitor:
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        name="joint-monitor", daemon=True)
 
+    def camera_info(self):
+        if self.camera_source is not None:
+            return self.camera_source.info()
+        return {"source": "none"}
+
+    def start_recording(self):
+        name = time.strftime("%Y%m%d-%H%M%S")
+        source_name = self.camera_info().get("source", "none")
+        meta = {"profile_camera_module": self.camera_module}
+        intrinsics = self.camera_source.intrinsics() if self.camera_source is not None \
+            and hasattr(self.camera_source, "intrinsics") else None
+        self.recorder = Recorder(self.record_root / f"{source_name}-{name}",
+                                 self.camera_info(), meta_extra=meta, intrinsics=intrinsics)
+        print(f"Recording started: {self.recorder.dir}", flush=True)
+
+    def stop_recording(self):
+        meta = self.recorder.stop()
+        print(f"Recording stopped: {json.dumps(meta, ensure_ascii=False)}", flush=True)
+        return meta
+
+    def camera_loop(self):
+        """相机线程：以源帧率读取全量帧（录制备份），并维护 MJPEG 信箱（预览节拍）。"""
+        last_preview = 0.0
+        while not self.stopping.is_set():
+            try:
+                frame = self.camera_source.read()
+            except Exception as error:
+                print(f"Camera source error: {error}", flush=True)
+                time.sleep(1)
+                continue
+            if frame is None:
+                continue
+            try:
+                if self.recorder is not None and self.recorder.recording:
+                    self.recorder.add_frame(frame)
+            except Exception as error:
+                print(f"Recorder error: {error}", flush=True)
+            now = time.monotonic()
+            if now >= last_preview + 1.0 / 15:
+                last_preview = now
+                raw = np.asarray(frame.raw)
+                level = np.rint((1 - np.clip(np.nan_to_num(raw / DEPTH_RANGE_M, posinf=1.), 0, 1)) * 255).astype(np.uint8)
+                depth_jpeg = cv2.imencode(".jpg", cv2.applyColorMap(level, cv2.COLORMAP_TURBO),
+                                          [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+                rgb_jpeg = None
+                if frame.rgb is not None:
+                    rgb_jpeg = cv2.imencode(".jpg", cv2.cvtColor(np.asarray(frame.rgb), cv2.COLOR_RGB2BGR),
+                                            [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+                with self.camera_lock:
+                    self.camera_jpegs = {"depth": depth_jpeg, "rgb": rgb_jpeg,
+                                         "sequence": frame.sequence}
+                    self.camera_sequence += 1
+                    self.camera_lock.notify_all()
+
+    def mjpeg(self, handler, key):
+        handler.send_response(200)
+        handler.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
+        handler.connection.settimeout(5)
+        seen = -1
+        try:
+            while not self.stopping.is_set():
+                with self.camera_lock:
+                    if self.camera_jpegs is None or self.camera_sequence == seen:
+                        self.camera_lock.wait_for(
+                            lambda: self.stopping.is_set() or
+                            (self.camera_jpegs is not None and self.camera_sequence != seen), timeout=1)
+                        continue
+                    if self.stopping.is_set():
+                        break
+                    seen = self.camera_sequence
+                    data = self.camera_jpegs[key]
+                if data is None:
+                    data = b""
+                handler.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+                                    str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n")
+        except (OSError, TimeoutError):
+            pass
+
+    def camera_status(self):
+        with self.camera_lock:
+            jpegs = self.camera_jpegs
+        source_info = self.camera_info()
+        recording = self.recorder.recording if self.recorder is not None else False
+        return {"camera": {**source_info,
+                           "online": jpegs is not None,
+                           "sequence": self.camera_sequence},
+                "recording": {"active": recording,
+                              "dir": str(self.recorder.dir) if recording else None,
+                              "frames": self.recorder.frames if self.recorder is not None else 0,
+                              "state_rows": self.recorder.state_rows if self.recorder is not None else 0,
+                              "sequence_gaps": self.recorder.gaps if self.recorder is not None else 0}}
+
     def start(self):
         self.thread.start()
+        if self.camera_thread is not None:
+            self.camera_thread.start()
         host, port = self.server.server_address[:2]
-        print(f"Joint monitor: http://{host}:{port}", flush=True)
+        print(f"Data web: http://{host}:{port}", flush=True)
+
+    def start_subscribers(self, domain, interface, init_factory=True):
+        """创建 DDS 订阅；init_factory=False 时由宿主进程先完成 ChannelFactoryInitialize。"""
+        from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
+        from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_, LowCmd_, IMUState_
+        if init_factory:
+            ChannelFactoryInitialize(domain, interface)
+        for topic, message_type, callback in (
+                ("rt/lowstate", LowState_, self.on_state),
+                ("rt/secondary_imu", IMUState_, self.on_torso_imu),
+                ("rt/lowcmd", LowCmd_, self.on_command),
+                ("rt/g1/reset_target", LowCmd_, self.on_target),
+                ("rt/g1/dry_run_target", LowCmd_, self.on_dry_target),
+                ("rt/g1/reset_enable", LowCmd_, self.on_enable)):
+            subscriber = ChannelSubscriber(topic, message_type)
+            self.subscribers.append(subscriber)
+            subscriber.Init(callback, 1)
 
     def snapshot_locked(self):
         # Called with self.lock held. Recompute torso freshness even if LowState stops.
@@ -223,6 +394,8 @@ class JointMonitor:
             slots = int((now - self.next_capture) / self.period) + 1
             self.next_capture += slots * self.period
             self.changed.notify_all()
+        if self.recorder is not None and self.recorder.recording:
+            self.recorder.add_state(state)
 
     def on_target(self, msg):
         if len(msg.motor_cmd) < len(self.names):
@@ -256,44 +429,68 @@ class JointMonitor:
             self.dry_target = target
             self.dry_target_at = time.monotonic()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
     def close(self):
         self.stopping.set()
         with self.changed:
             self.changed.notify_all()
+        with self.camera_lock:
+            self.camera_lock.notify_all()
         if self.thread.is_alive():
             self.server.shutdown()
             self.thread.join(timeout=2)
         self.server.server_close()
+        if self.recorder is not None and self.recorder.recording:
+            self.recorder.stop()
+        if self.camera_source is not None:
+            self.camera_source.close()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="G1 29DOF standalone web joint monitor")
+    parser = argparse.ArgumentParser(description="G1 29DOF robot data web: joints/IMU + camera + recording")
     parser.add_argument("--domain", type=int, default=1)
     parser.add_argument("--interface", default="lo")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--rate", type=float, default=50,
                         help="DDS sampling limit in Hz (default: 50)")
+    parser.add_argument("--source", choices=("none", "realsense", "sim", "mock"), default="none",
+                        help="Camera source: realsense device, sim injection (used by sim.py), or mock")
+    parser.add_argument("--camera-config", help="Camera module JSON (cameras/*.json)")
+    parser.add_argument("--record", action="store_true", help="Start recording immediately")
+    parser.add_argument("--record-dir", default="logs/recordings", help="Recording root directory")
     args = parser.parse_args()
     if args.domain < 0 or not 1 <= args.port <= 65535 or not math.isfinite(args.rate) or args.rate <= 0:
         parser.error("domain must be nonnegative; rate must be positive; port must be 1..65535")
-    from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
-    from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_, LowCmd_, IMUState_
+    if args.source == "realsense" and not args.camera_config:
+        parser.error("--source realsense requires --camera-config (cameras/*.json)")
 
-    monitor = JointMonitor(args.host, args.port, args.rate)
-    subscribers = []
+    camera_source = None
+    camera_module = None
+    if args.source == "realsense":
+        from camera_sources import RealSenseSource
+        camera_source = RealSenseSource(args.camera_config)
+    elif args.source == "mock":
+        from camera_sources import MockSource
+        camera_source = MockSource(args.camera_config)
+    elif args.source == "sim":
+        from camera_sources import SimSource
+        camera_source = SimSource()
+        if args.camera_config:
+            camera_source.set_module(load_camera_module(args.camera_config))
+
+    monitor = JointMonitor(args.host, args.port, args.rate, camera_source=camera_source,
+                           camera_module=camera_module, record_root=args.record_dir,
+                           record_start=args.record)
     try:
-        ChannelFactoryInitialize(args.domain, args.interface)
-        for topic, message_type, callback in (
-                ("rt/lowstate", LowState_, monitor.on_state),
-                ("rt/secondary_imu", IMUState_, monitor.on_torso_imu),
-                ("rt/lowcmd", LowCmd_, monitor.on_command),
-                ("rt/g1/reset_target", LowCmd_, monitor.on_target),
-                ("rt/g1/dry_run_target", LowCmd_, monitor.on_dry_target),
-                ("rt/g1/reset_enable", LowCmd_, monitor.on_enable)):
-            subscriber = ChannelSubscriber(topic, message_type)
-            subscribers.append(subscriber)
-            subscriber.Init(callback, 1)
+        monitor.start_subscribers(args.domain, args.interface)
+        if camera_source is not None and hasattr(camera_source, "open"):
+            camera_source.open()
         monitor.start()
         print(f"Waiting for G1 29DOF DDS data: domain={args.domain}, interface={args.interface}. Ctrl+C to exit.", flush=True)
         while True:
@@ -301,7 +498,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        for subscriber in subscribers:
+        for subscriber in monitor.subscribers:
             subscriber.Close()
         monitor.close()
 

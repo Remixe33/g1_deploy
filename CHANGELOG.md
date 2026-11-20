@@ -1,5 +1,12 @@
 # 改动总结
 
+## 2026-11-19：统一机器人数据可视化与录制网页
+
+- 演进 `apps/monitor` 为统一数据网页：关节/IMU/目标（既有 SSE 端点保留）+ 相机 RGB/Depth 实时 MJPEG 流 + 录制按钮（POST `/api/record/start|stop`，或 `--record` 启动即录）。相机源可插拔（`--source realsense|sim|mock`）：实机 pyrealsense2 读 `cameras/*.json`；仿真由 sim.py 进程内注入（渲染帧经查看器线程信箱交付，GL 约束不破坏）；mock 合成源支持无设备全流程验证。
+- 录制落盘 `logs/recordings/<来源>-<时间戳>/`：`rgb.mp4` + `depth_color.mp4`（伪彩）+ **`pointcloud/NNNNNN.ply`**（PLY 二进制点云序列：深度逐帧按相机内参反投影为 xyz+RGB，深度光轴系 x 右/y 下/z 前，无效像素剔除；每帧全量，640×480 约 110 MB/s 磁盘写入）+ `timestamps.csv`（含丢帧 gap 标记）+ `state.csv`（关节/IMU/目标快照）+ `meta.json`（含点云格式/内参/坐标约定/RGB 对齐近似说明）；按 sequence 去重，缓存帧重复投递不入库。depth PNG 序列被点云取代。
+- 仿真录制帧率受查看器循环节流（约 14 fps）；实机为相机帧率（door 模块 30 fps）。实机 pyrealsense2 源为接口级实现（本机无 SDK），实机帧统计待上架验证。
+- 验证：mock 全流程（端点、659 帧录制、PNG 毫米值与合成斜坡一致、MP4 可播、meta 齐全）；仿真 door 全流程（sim.py 进程内托管、网页在线、DDS 29 关节 18.7 ms 新鲜度、API 录制回环 6 s 82 帧零缺口、MJPEG 双流）；`realsense_web.py` 与既有端点未破坏。
+
 ## 2026-11-19：仿真器收编为 third_party/unitree_mujoco
 
 - 外部仿真器检出（`wangsy1999/unitree_mujoco` fork @`eeadfae`，含 Parkour 观测钩子）迁移为仓库内 `third_party/unitree_mujoco/`，入库体积 38 MB（清理运行时产物与嵌套 `.git` 后；BSD-3-Clause LICENSE 随迁，来源与提交记录见 ORIGIN.md）。

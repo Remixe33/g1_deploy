@@ -124,13 +124,16 @@ class MotorLimitAdapter:
 
 
 class NativeObservationPublisher:
-    def __init__(self, model, data, port=None, config_path=None, camera_config=None):
+    def __init__(self, model, data, port=None, config_path=None, camera_config=None,
+                 frame_sink=None):
         if camera_config is None:
             raise ValueError("Native depth observations require a camera module")
         self.adapter = MotorLimitAdapter(model)
         self.camera = NativeDepthCamera(model, data, camera_config)
         module = json.loads(Path(camera_config).read_text())
         self.rgb = NativeRgbCamera(model, data, module) if module.get("rgb") else None
+        self.frame_sink = frame_sink  # 主线程渲染后回调（如数据网页信箱），可为 None
+        self._sink_sequence = None
 
     def update(self):
         pass
@@ -140,6 +143,9 @@ class NativeObservationPublisher:
         frame = self.camera.update()
         if frame is not None and self.rgb is not None:
             frame = replace(frame, rgb=self.rgb.update())
+        if frame is not None and self.frame_sink is not None and frame.sequence != self._sink_sequence:
+            self._sink_sequence = frame.sequence
+            self.frame_sink(frame)
         return frame, 0.0 if frame is None else frame.time
 
     def close(self):

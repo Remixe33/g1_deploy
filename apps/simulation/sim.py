@@ -48,6 +48,11 @@ def main():
                         help="Obstacle course; default: original external scene, or the task profile's scene")
     parser.add_argument("--window-backend", choices=("auto", "x11", "wayland"), default="x11",
                         help="Window backend (default: x11); auto prefers X11/XWayland when DISPLAY is available")
+    parser.add_argument("--data-web", action=argparse.BooleanOptionalAction, default=True,
+                        help="Host the robot data web (joints/IMU/camera/recording) for native-camera profiles")
+    parser.add_argument("--data-web-port", type=int, default=8765)
+    parser.add_argument("--record", action="store_true",
+                        help="Start data-web recording immediately (requires the data web)")
     args = parser.parse_args()
     profile = None
     if args.profile:
@@ -68,6 +73,12 @@ def main():
     if not profile_pipeline:
         profile_pipeline = (profile or {}).get("camera", {}).get("module", {}).get("pipeline")
     native_camera = bool(profile) and profile_pipeline == "none"
+    data_web_source = None
+    if native_camera and args.data_web:
+        sys.path.insert(0, str(PROJECT_ROOT / "apps" / "monitor"))
+        from camera_sources import SimSource
+        data_web_source = SimSource()
+        data_web_source.set_module(profile["camera"]["module"])
     if native_camera and args.terrain:
         parser.error(f"The native camera follows the generated scene; remove --terrain {args.terrain}")
     profile_terrain = (profile or {}).get("scene", {}).get("terrain")
@@ -140,12 +151,30 @@ def main():
         print(f"Shared G1 simulation: DDS domain {args.domain}, interface lo, depth {depth_description}"
               + (f", head back {head_back:g} deg" if head_back else "")
               + (f", profile {args.profile}" if args.profile else "")
+              + (f", data web :{args.data_web_port}" if data_web_source is not None else "")
               + f", window backend {window_backend}", flush=True)
         sys.argv = [str(simulator)]
         with ExitStack() as extensions:
             extensions.enter_context(install_observation_bridge(
                 config, args.depth, args.depth_preview, native_camera,
-                profile.get("camera", {}).get("config") if profile else None, head_back))
+                profile.get("camera", {}).get("config") if profile else None, head_back,
+                frame_sink=data_web_source.deposit if data_web_source is not None else None))
+            if data_web_source is not None:
+                from joint_monitor import JointMonitor
+                data_web = JointMonitor(host="127.0.0.1", port=args.data_web_port, rate_hz=50,
+                                        camera_source=data_web_source, camera_module=depth_camera,
+                                        record_root="logs/recordings", record_start=args.record)
+                extensions.enter_context(data_web)
+                data_web.start_subscribers(args.domain, "lo", init_factory=True)
+                data_web.start()
+                data_web_url = f"http://127.0.0.1:{args.data_web_port}/"
+                print(f"Robot data web: {data_web_url} (joints/IMU, camera RGB/Depth, "
+                      f"record button on the page)", flush=True)
+                try:
+                    import webbrowser
+                    webbrowser.open(data_web_url)
+                except Exception:
+                    pass  # Headless environments keep the printed link only.
             if args.follow:
                 from viewer_camera import follow_robot
                 extensions.enter_context(follow_robot())

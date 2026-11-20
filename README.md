@@ -134,7 +134,7 @@ cpack -G TGZ
 ./g1 dwaq sim --domain 1 --profile door
 ```
 
-运行后 door 任务仿真默认使用 DWaQ 策略进行移动控制，仿真窗口显示独立 RGB/Depth 双视角。行走操作：`9/Start` 接管 → `p/X` 复位（约 3 s）→ `r/A` 进策略；`w/s/a/d/q/e` 调速转向，`x/Y` 速度清零，空格停止。
+运行后 door 任务仿真默认使用 DWaQ 策略进行移动控制，仿真窗口显示独立 RGB/Depth 双视角，同时自动托管**机器人数据网页**（`http://127.0.0.1:8765/`：关节/IMU/目标 + 相机 RGB/Depth 实时流 + 录制按钮，录制落盘 `logs/recordings/<时间戳>/`：RGB 与深度伪彩 MP4、**PLY 二进制点云序列**（xyz+RGB）、状态 CSV、meta.json）。行走操作：`9/Start` 接管 → `p/X` 复位（约 3 s）→ `r/A` 进策略；`w/s/a/d/q/e` 调速转向，`x/Y` 速度清零，空格停止。
 
 ### Parkour / Hybrid（仿真）
 

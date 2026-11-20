@@ -16,6 +16,8 @@
 ./g1 dwaq sim --domain 1 --profile door
 ```
 
+door 档案（原生相机）自动托管**机器人数据网页** `http://127.0.0.1:8765/`：关节/IMU/目标 + RGB/Depth 实时流 + 录制按钮（`--record` 启动即录，落盘 `logs/recordings/`，格式见 [../monitor/README.md](../monitor/README.md)）；`--data-web=false` 可关闭，`--data-web-port` 换端口。
+
 不带 `--profile` 时保留原有共享仿真行为：
 
 ```bash

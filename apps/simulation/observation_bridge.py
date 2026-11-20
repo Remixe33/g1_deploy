@@ -9,7 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 @contextmanager
-def install_observation_bridge(config, enabled, preview, native, camera_config, head_back):
+def install_observation_bridge(config, enabled, preview, native, camera_config, head_back,
+                               frame_sink=None):
     config.PARKOUR_OBSERVATIONS = enabled
     config.PARKOUR_OBSERVATION_PORT = None
     config.PARKOUR_DEPTH_PREVIEW = preview
@@ -23,7 +24,7 @@ def install_observation_bridge(config, enabled, preview, native, camera_config, 
 
         bridge = ModuleType("parkour_observation")
         bridge.ParkourObservationPublisher = partial(
-            NativeObservationPublisher, camera_config=camera_config)
+            NativeObservationPublisher, camera_config=camera_config, frame_sink=frame_sink)
         sys.modules["parkour_observation"] = bridge
     else:
         import parkour_observation as bridge

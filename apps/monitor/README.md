@@ -1,36 +1,61 @@
-# 只读关节网页监控
+# 机器人数据可视化与录制
 
-`joint_monitor.py` 显示 29 个关节、IMU、实际命令、空跑目标和最近曲线。网页只订阅 DDS，不发布 LowCmd、不释放运动服务，也不能发送运动指令。
+`joint_monitor.py`（公开入口 `robot_data_web.py`）提供统一的机器人数据网页：29 关节、双 IMU、目标与曲线，外加相机 RGB/Depth 实时流与**数据录制**。只订阅 DDS，不发布 LowCmd、不释放运动服务，也不能发送运动指令。
+
+## 相机源
+
+| `--source` | 数据来源 | 场景 |
+| --- | --- | --- |
+| `sim` | 仿真进程内注入（`sim.py --profile door` 自动托管，无需单独启动） | door 档案仿真 |
+| `realsense` | 实机 D435（pyrealsense2，读 `--camera-config` 相机模块） | 独立预览/录制（与实机控制器 USB 互斥） |
+| `mock` | 合成斜坡深度 + 彩条 | 无设备开发验证 |
+| `none`（默认） | 无相机 | 纯关节监控 |
+
+相机模块来自 `cameras/*.json`；door 用 `d435_rgbd.json`（640×480@30，`pipeline: none`）。实机单 D435 的深度流互斥规则见 [相机模块说明](../../cameras/README.md)。
 
 ## 启动
 
 ```bash
-# 源码目录；参数依次为 DDS 网卡、HTTP 监听地址、端口
-bash apps/monitor/monitor.sh eth0 0.0.0.0 8765
-
-# 仿真直接运行，可指定域
-python3 apps/monitor/joint_monitor.py \
-  --domain 1 --interface lo --host 127.0.0.1 --port 8765 --rate 50
-
-# 安装目录
-./g1 monitor eth0 0.0.0.0 8765
+# 仿真：sim.py --profile door 自动托管数据网页，无需单独启动；
+# 浏览器打开 http://127.0.0.1:8765/
+.venv/bin/python apps/monitor/robot_data_web.py --source realsense \
+  --camera-config cameras/d435_rgbd.json --domain 0 --interface eth0   # 实机独立预览/录制
+.venv/bin/python apps/monitor/robot_data_web.py --source mock                   # 无设备验证
+bash apps/monitor/monitor.sh eth0 0.0.0.0 8765                         # 旧行为：纯关节监控（域 0）
 ```
 
-浏览器打开 `http://机器人IP:8765/`；本机仿真使用 `http://127.0.0.1:8765/`。过期数据显示离线，空跑目标标为 `OFF · 空跑`。Ctrl+C 结束服务。
+录制触发：网页按钮 `开始录制/停止录制`（POST `/api/record/start|stop`），或启动时加 `--record`。
+
+## 录制格式
+
+每次录制一个目录 `logs/recordings/<来源>-<时间戳>/`（仿真与实机同格式同代码）：
+
+- `rgb.mp4`：RGB 视频（mp4v）；
+- `depth_color.mp4`：深度伪彩视频（0–2.5 m TURBO 伪彩）；
+- `pointcloud/NNNNNN.ply`：**PLY 二进制点云**（每点 xyz+RGB，深度光轴系 x 右/y 下/z 前）——按相机模块内参逐帧反投影，全帧率保存（640×480 约 110 MB/s，录制时长自控）；CloudCompare/Open3D/PCL 直接打开；
+- `timestamps.csv`：每帧主机/源时间戳与序列号（丢帧标记 gap）；
+- `state.csv`：关节/IMU/目标快照（监控采样率）；
+- `meta.json`：来源、相机模块、内参、帧计数、序列缺口等。
+
+离线读取示例：
+
+```python
+import numpy as np
+dtype = np.dtype([("x", "<f4"), ("y", "<f4"), ("z", "<f4"),
+                  ("red", "u1"), ("green", "u1"), ("blue", "u1")])
+cloud = np.fromfile("pointcloud/000000.ply", dtype=dtype)
+```
+
+按 sequence 去重，同一帧的重复投递不入库。仿真录制帧率受查看器循环节流（约 14 fps）；实机为相机帧率。
+
+## 端点
+
+- `/`：统一网页；`/api/joints`、`/api/stream`（SSE 关节流）、`/api/status`（相机+录制状态）；
+- `/rgb.mjpg`、`/depth.mjpg`：MJPEG 实时流；
+- `POST /api/record/start|stop`：录制开关。
 
 ## 依赖
 
-需要 Python、NumPy、CycloneDDS 和官方 `unitree_sdk2py`，版本范围见 `requirements.txt`。C++ 控制器本身不依赖这些 Python 包。
+需要 Python、NumPy、CycloneDDS、官方 `unitree_sdk2py`、OpenCV（headless 即可）与可选 `pyrealsense2`，版本范围见 `requirements.txt`。C++ 控制器本身不依赖这些 Python 包。解释器与运行库解析规则见 [网页监控部署](../../docs/WEB.md)。
 
-安装到项目内依赖目录的示例：
-
-```bash
-CYCLONEDDS_HOME=/usr/local python3 -m pip install \
-  --target .python-deps -r apps/monitor/requirements.txt
-python3 -m pip install --no-deps --target .python-deps \
-  /path/to/unitree_sdk2_python
-```
-
-可通过 `PYTHON_BIN` 指定解释器。SDK 和 CycloneDDS 应与控制器使用同一套运行库，避免混用 ROS 环境中的另一套 DDS 库。
-
-接口为 `/`、`/api/joints` 和 `/api/stream`。完整部署说明见 [网页关节监控](../../docs/WEB.md)。
+接口为 `/`、`/api/joints`、`/api/stream`、`/api/status`、`/rgb.mjpg`、`/depth.mjpg`、`/api/record/*`。硬件边界见 [硬件控制说明](../../docs/HARDWARE.md)。

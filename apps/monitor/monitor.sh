@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Read-only monitor; works in the source checkout and in the CMake install tree.
+# 额外选项（如 --record --camera-config=cameras/d435_rgbd.json）追加在位置参数之后，
+# 带值参数请使用 = 连接写法。
 set -euo pipefail
-if (($# < 1 || $# > 3)); then
-    echo "Usage: $0 ROBOT_INTERFACE [HOST=127.0.0.1] [PORT=8765]" >&2
+if (($# < 1)); then
+    echo "Usage: $0 ROBOT_INTERFACE [HOST=127.0.0.1] [PORT=8765] [extra --options]" >&2
     exit 2
 fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,5 +35,6 @@ for dependency_root in "$root_dir/.deps" "$root_dir/../.deps"; do
     fi
 done
 export LD_LIBRARY_PATH="$dds_library_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+if (($# > 3)); then shift 3; fi
 exec "$python" -u "$root_dir/apps/monitor/joint_monitor.py" \
-    --domain 0 --interface "$interface" --host "${2:-127.0.0.1}" --port "${3:-8765}" --rate 50
+    --domain 0 --interface "$interface" --host "${2:-127.0.0.1}" --port "${3:-8765}" --rate 50 "$@"
