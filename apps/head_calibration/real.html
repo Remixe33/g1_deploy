@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G1 头部相机标定</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101719; color: #ecf3f3; }
+body { margin: 0; }
+main { max-width: 1120px; padding: 24px; margin: auto; }
+h1 { margin: 0 0 6px; font-size: clamp(24px, 4vw, 34px); }
+h2 { margin: 0 0 12px; font-size: 18px; }
+p { margin: 8px 0; line-height: 1.5; }
+.muted { color: #afc0c0; }
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); margin-top: 20px; }
+section { padding: 16px; background: #162226; border: 1px solid #304146; border-radius: 10px; }
+.frame { background: #0c1214; border-radius: 6px; overflow: hidden; aspect-ratio: 4 / 3; display: grid; place-items: center; }
+img { display: block; width: 100%; height: auto; }
+img[hidden] { display: none; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 44px; margin-top: 12px; }
+button { border: 0; border-radius: 6px; padding: 10px 14px; background: #81e2de; color: #07363a; font: inherit; font-weight: 650; cursor: pointer; }
+button:disabled { background: #536065; color: #e4ebeb; cursor: default; }
+a { color: #8de7e3; }
+.alert { color: #ffcb9f; }
+</style>
+</head>
+<body>
+<main>
+  <h1>G1 头部相机标定</h1>
+  <p id="guidance" class="muted">将双臂摆到相机可见的位置，手动调整头部并锁紧。画面显示停稳后确认。</p>
+  <div class="grid">
+    <section aria-labelledby="live-title">
+      <h2 id="live-title">头部 RGB</h2>
+      <div class="frame"><img id="preview" alt="实时头部图像和轮廓" hidden><span id="waiting" class="muted">等待图像</span></div>
+      <div class="controls">
+        <button id="confirm" type="button" disabled>确认当前帧</button>
+        <span id="frame-label" class="muted"></span>
+      </div>
+      <p id="status" role="status" class="muted"></p>
+      <p id="error" role="alert" class="alert"></p>
+    </section>
+    <section aria-labelledby="result-title">
+      <h2 id="result-title">标定与复核结果</h2>
+      <div class="frame"><img id="result-image" alt="确认图像与重投影轮廓叠加" hidden><span id="waiting-result" class="muted">等待确认</span></div>
+      <p id="result-summary" role="status" class="muted"></p>
+      <p id="coverage" class="muted"></p>
+      <a id="depth" href="/api/depth.json" download="depth-camera-calibration.json" hidden>下载深度相机外参</a>
+    </section>
+  </div>
+</main>
+<script>
+const preview = document.getElementById("preview");
+const confirmButton = document.getElementById("confirm");
+const resultImage = document.getElementById("result-image");
+const statusLabel = document.getElementById("status");
+const errorLabel = document.getElementById("error");
+const frameLabel = document.getElementById("frame-label");
+const guidance = document.getElementById("guidance");
+const waiting = document.getElementById("waiting");
+const resultSummary = document.getElementById("result-summary");
+const waitingResult = document.getElementById("waiting-result");
+const coverageLabel = document.getElementById("coverage");
+const depth = document.getElementById("depth");
+
+let shown = null;
+let previewUrl = null;
+let resultId = null;
+let confirming = false;
+let notice = "";
+
+const phaseText = {
+  fit: "将双臂摆到相机可见的位置，手动调整头部并锁紧。画面显示停稳后确认。",
+  fitting: "正在用已确认的原始图像和同帧双臂反馈求解。",
+  validation: "保持头部锁紧，改变肩、肘或腕的位置。双手仍须可见，停稳后再确认以复核。",
+  checking: "正在复核另一组姿态，使用已经求出的外参。",
+  complete: "独立姿态复核通过。",
+};
+const reasonText = {
+  insufficient_image_edges: "画面对比度不足",
+  arm_out_of_view: "一只手或腕部离开视野",
+  insufficient_arm_contour_match: "手或腕部边缘支持不足",
+  solution_at_search_boundary: "结果落在搜索边界",
+  ambiguous_contour_pose: "存在多个接近的位姿解",
+};
+const paint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+async function poll() {
+  try {
+    const response = await fetch("/api/state", {cache: "no-store"});
+    if (!response.ok) throw new Error("state");
+    const state = await response.json();
+    guidance.textContent = phaseText[state.phase];
+    statusLabel.textContent = state.eligible ? "双臂已停稳，当前帧可确认。" : (state.frame_reason || "");
+    errorLabel.textContent = state.error || notice;
+    depth.hidden = !state.depth_ready;
+
+    if (state.result_overlay && resultId !== state.result_id) {
+      resultId = state.result_id;
+      resultImage.src = `/api/result.png?frame=${resultId}`;
+      resultImage.hidden = false;
+      waitingResult.hidden = true;
+    }
+    if (state.result) {
+      const result = state.result;
+      const angle = result.head_back_deg;
+      const position = result.pivot_torso_m;
+      const coverage = [
+        ["left", "左手"], ["right", "右手"],
+      ].filter(([side]) => result.coverage?.[side]?.hand_edge_coverage != null)
+        .map(([side, label]) => `${label}边缘匹配 ${Math.round(result.coverage[side].hand_edge_coverage * 100)}%`);
+      if (result.cost_px != null) coverage.push(`轮廓代价 ${result.cost_px.toFixed(2)} px`);
+      coverageLabel.textContent = coverage.join(" · ");
+      if (!result.accepted) {
+        resultSummary.textContent = reasonText[result.reason] || result.reason || "本帧未达到标定或复核条件。";
+      } else if (result.stage === "fit" && angle != null && position) {
+        resultSummary.textContent = `后仰 ${angle.toFixed(3)}°，轴心 X/Z ${(position[0] * 1000).toFixed(1)} / ${(position[2] * 1000).toFixed(1)} mm`;
+      } else {
+        resultSummary.textContent = result.stage === "validation" ? "独立姿态复核通过。" : "标定成功。";
+      }
+    }
+
+    if (confirming) return;
+    if (state.frame == null) {
+      confirmButton.disabled = true;
+      shown = null;
+      frameLabel.textContent = "";
+      return;
+    }
+    if (shown?.id !== state.frame) {
+      confirmButton.disabled = true;
+      const frame = await fetch(`/api/frame/${state.frame}.png`, {cache: "no-store"});
+      if (!frame.ok) return;
+      const ticket = frame.headers.get("X-Frame-Ticket");
+      const eligible = frame.headers.get("X-Frame-Eligible") === "1";
+      const blob = await frame.blob();
+      if (confirming) return;
+      const url = URL.createObjectURL(blob);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = url;
+      preview.src = url;
+      await preview.decode();
+      waiting.hidden = true;
+      preview.hidden = false;
+      await paint();
+      shown = {id: state.frame, ticket, eligible};
+      frameLabel.textContent = `帧 ${shown.id}`;
+    }
+    confirmButton.disabled = !state.eligible || !shown?.eligible;
+    confirmButton.textContent = state.phase === "validation" ? "确认复核帧" : "确认标定帧";
+  } catch {
+    confirmButton.disabled = true;
+    statusLabel.textContent = "等待与标定程序连接。";
+  } finally {
+    setTimeout(poll, 120);
+  }
+}
+
+confirmButton.addEventListener("click", async () => {
+  if (!shown?.ticket || confirming) return;
+  confirming = true;
+  confirmButton.disabled = true;
+  const {id, ticket} = shown;
+  try {
+    const response = await fetch("/api/confirm", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({frame: id, ticket}),
+    });
+    const result = await response.json();
+    notice = result.error || "";
+  } catch {
+    notice = "确认请求未完成，请等待新帧。";
+  } finally {
+    shown = null;
+    confirming = false;
+  }
+});
+poll();
+</script>
+</body>
+</html>

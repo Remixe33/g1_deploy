@@ -1,0 +1,10 @@
+{
+  "interface": "REPLACE_WITH_ROBOT_DDS_INTERFACE",
+  "serial": "REPLACE_WITH_REALSENSE_SERIAL",
+  "T_torso_camera_optical_zero": null,
+  "nominal_head_back_deg": 20,
+  "nominal_pivot_torso_m": [0, 0, 0.320],
+  "port": 8768,
+  "rgb": {"width": 640, "height": 480, "fps": 30},
+  "depth": {"width": 640, "height": 480, "fps": 30}
+}

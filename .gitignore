@@ -14,3 +14,4 @@ __pycache__/
 /build-sdk/
 /logs/
 MUJOCO_LOG.TXT
+/apps/head_calibration/real-config.json
