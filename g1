@@ -7,7 +7,7 @@ if [[ -f "$package_dir/CMakeLists.txt" ]]; then
 else
     controller="$package_dir/bin/g1_dwaq"
 fi
-config="$package_dir/apps/dwaq/config/g1_locomotion.json"
+config="$package_dir/apps/policies/dwaq/config/g1_locomotion.json"
 usage() {
     cat <<'HELP'
 Usage:
@@ -59,7 +59,8 @@ if [[ "$mode" == monitor ]]; then
 fi
 if [[ "$mode" == realsense || "$mode" == parkour || "$mode" == hybrid ]]; then
     if [[ -x "$package_dir/$mode" ]]; then exec "$package_dir/$mode" "$@"; fi
-    exec bash "$package_dir/apps/$mode/$mode.sh" "$@"
+    if [[ "$mode" == realsense ]]; then exec bash "$package_dir/apps/realsense/realsense.sh" "$@"; fi
+    exec bash "$package_dir/apps/policies/$mode/$mode.sh" "$@"
 fi
 [[ -x "$controller" ]] || { echo "Missing executable: $controller" >&2; exit 1; }
 case "$mode" in

@@ -479,14 +479,14 @@ def main():
                         help="DDS sampling limit in Hz (default: 50)")
     parser.add_argument("--source", choices=("none", "realsense", "sim", "mock"), default="none",
                         help="Camera source: realsense device, sim injection (used by sim.py), or mock")
-    parser.add_argument("--camera-config", help="Camera module JSON (cameras/*.json)")
+    parser.add_argument("--camera-config", help="Camera module JSON (profiles/configs/cameras/*.json)")
     parser.add_argument("--record", action="store_true", help="Start recording immediately")
     parser.add_argument("--record-dir", default="logs/recordings", help="Recording root directory")
     args = parser.parse_args()
     if args.domain < 0 or not 1 <= args.port <= 65535 or not math.isfinite(args.rate) or args.rate <= 0:
         parser.error("domain must be nonnegative; rate must be positive; port must be 1..65535")
     if args.source == "realsense" and not args.camera_config:
-        parser.error("--source realsense requires --camera-config (cameras/*.json)")
+        parser.error("--source realsense requires --camera-config (profiles/configs/cameras/*.json)")
 
     camera_source = None
     camera_module = None

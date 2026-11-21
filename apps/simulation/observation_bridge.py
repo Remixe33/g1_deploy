@@ -34,7 +34,7 @@ def install_observation_bridge(config, enabled, preview, native, camera_config, 
         class Publisher(original):
             def __init__(self, model, data, port=None, config_path=None):
                 super().__init__(model, data, config_path=PROJECT_ROOT /
-                                 "apps/parkour/config/g1_parkour.json")
+                                 "apps/policies/parkour/config/g1_parkour.json")
                 if head_back:
                     from terrain import apply_head_back_camera
                     apply_head_back_camera(self.adapter, head_back)

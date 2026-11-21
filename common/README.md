@@ -1,6 +1,6 @@
 # 公共控制底座
 
-`common/include/` 提供跨控制器共用的 header-only 模块。程序专属代码放在 `apps/<程序>/`，公共实现不复制到各任务中。
+`common/include/` 提供跨控制器共用的 header-only 模块。控制器专属代码放在 `apps/policies/<程序>/`，公共实现不复制到各任务中。
 
 ## 控制结构
 

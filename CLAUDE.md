@@ -35,13 +35,13 @@ cmake --install build
 - 仿真：`python3 apps/simulation/sim.py --profile door --domain 1`（仿真器已内置于 `third_party/unitree_mujoco`，`--mujoco-root` 可覆盖；`--terrain`、`--follow`、`--depth-preview` 见 README）。仿真与控制器须同机同用户，一次只运行一个控制器。
 - 网页监控：`bash apps/monitor/monitor.sh <网卡> [HOST] [PORT]`；相机预览：`bash apps/realsense/realsense.sh --host 0.0.0.0 --port 8766`（实机控制前必须退出，避免占用 USB）。
 - 机器人一键配置：`bash scripts/setup_robot.sh`（ARM64 机载，离线装 Python/SDK/ORT 后编译安装）。
-- 直接跑构建产物用长参数，如 `./build/g1_dwaq --check-policy --config apps/dwaq/config/g1_locomotion.json`、`--hardware --domain 0 --interface eth0`。
+- 直接跑构建产物用长参数，如 `./build/g1_dwaq --check-policy --config apps/policies/dwaq/config/g1_locomotion.json`、`--hardware --domain 0 --interface eth0`。
 
 ## 架构
 
 ### 目录与入口分工
 
-- `apps/<程序>/{src,include,config,models}` —— 程序专属代码。每个 C++ 程序固定三文件：`main.cpp`（入口/帮助/异常出口）、`options.cpp`（命令行解析与校验）、`controller.cpp`（离线检查、初始化、控制循环）。
+- `apps/policies/<程序>/{src,include,config,models}` —— 控制器专属代码。每个 C++ 程序固定三文件：`main.cpp`（入口/帮助/异常出口）、`options.cpp`（命令行解析与校验）、`controller.cpp`（离线检查、初始化、控制循环）。
 - `common/include/` —— 跨程序共用的 **header-only** 模块（无 .cpp，直接被各 target include）：`g1_loop_scheduler.h`（固定周期网格、跳过错过的 tick）、`g1_policy_worker.h`（策略线程邮箱：只保留最新输入/结果，推理期间不持锁）、`g1_dds_state_cache.h`（DDS 订阅、带时间戳快照、故障锁存）、`g1_control_targets.h`（复位插值、目标填充）、`g1_joint_mapping.h`（关节映射）、`g1_onnx_utils.h`、`g1_observation_history.h`、`g1_config_utils.h`（读 JSON、相对路径解析）、输入/监控/日志等。跨程序共用代码放 `common/`，禁止复制多份。
 - `apps/realsense/src/g1_depth_camera.cpp` —— C++ 原生 RealSense 采集（静态库 `g1_depth_camera`，被 parkour/hybrid 链接）；`apps/simulation/` —— 任务档案驱动的 MuJoCo 启动、统一 Raw/可选 Model/可选 RGB 相机管线及 Parkour 共享内存桥接；door 的独立 RGB/Depth 预览不依赖 Parkour 策略配置，RGB 外参由相机模块提供。`apps/monitor/`、`apps/realsense/` 的网页服务是独立 Python 进程，只读。
 
@@ -61,7 +61,7 @@ cmake --install build
 
 ### 配置体系
 
-每个程序自己的 JSON：`apps/dwaq/config/g1_locomotion.json`、`apps/parkour/config/g1_parkour.json` + `realsense_parkour.json`（深度预处理/相机外参）、`apps/hybrid/config/g1_hybrid.json`（`policies` 指向两份策略 JSON，相对混合配置目录解析）。模型路径写在 JSON 内（`policy_path` / `models.*`），相对路径以 JSON 所在目录为基准。`reset_seconds`、`hardware`（关节限界、`limit_target_position` 等，DDS 顺序）各程序独立维护；配置仅在启动时读取，改后须重启。
+每个程序自己的 JSON：`apps/policies/dwaq/config/g1_locomotion.json`、`apps/policies/parkour/config/g1_parkour.json` + `realsense_parkour.json`（深度预处理/相机外参）、`apps/policies/hybrid/config/g1_hybrid.json`（`policies` 指向两份策略 JSON，相对混合配置目录解析）。模型路径写在 JSON 内（`policy_path` / `models.*`），相对路径以 JSON 所在目录为基准。`reset_seconds`、`hardware`（关节限界、`limit_target_position` 等，DDS 顺序）各程序独立维护；配置仅在启动时读取，改后须重启。
 
 ### 深度链路（Parkour/Hybrid）
 

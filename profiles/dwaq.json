@@ -1,11 +1,11 @@
 {
   "description": "DWaQ locomotion with the stock G1 and the original external scene",
   "program": "dwaq",
-  "policy_config": "../apps/dwaq/config/g1_locomotion.json",
+  "policy_config": "../apps/policies/dwaq/config/g1_locomotion.json",
   "scene": {
     "terrain": "original"
   },
   "robot": {
-    "config": "../robots/g1_stock.json"
+    "config": "configs/robots/g1_stock.json"
   }
 }

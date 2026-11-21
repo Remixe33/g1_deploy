@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Read-only monitor; works in the source checkout and in the CMake install tree.
-# 额外选项（如 --record --camera-config=cameras/d435_rgbd.json）追加在位置参数之后，
+# 额外选项（如 --record --camera-config=profiles/configs/cameras/d435_rgbd.json）追加在位置参数之后，
 # 带值参数请使用 = 连接写法。
 set -euo pipefail
 if (($# < 1)); then

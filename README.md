@@ -4,21 +4,22 @@
 
 面向宇树 G1 29 自由度人形机器人的 C++17 部署项目。直接通过 Unitree DDS 读取低层状态并下发关节目标，使用 ONNX Runtime 执行预训练策略。
 
-核心控制链路不依赖 ROS、Python 或 MuJoCo；Python 仅用于仿真、只读网页监控和独立相机预览。当前包含三个行走控制器（DWaQ、Parkour、Hybrid）、任务档案组合机制、MuJoCo 仿真启动器（含 door 任务场景与 RGB/Depth 双视角预览）和只读网页监控。
+核心控制链路不依赖 ROS、Python 或 MuJoCo。Python 用于仿真、只读网页监控、独立相机预览和头部标定。当前包含三个行走控制器（DWaQ、Parkour、Hybrid）、任务档案组合机制和 MuJoCo 仿真启动器（含 door 任务场景与 RGB/Depth 双视角预览）。
 
 ### 模块与文档导航
 
 | 模块 | 功能 | 专题文档 |
 | --- | --- | --- |
-| DWaQ | 单网络行走、复位、离线检查和手柄诊断 | [apps/dwaq/README.md](apps/dwaq/README.md) |
-| Parkour | 深度编码器＋动作网络双 ONNX 推理 | [apps/parkour/README.md](apps/parkour/README.md) |
-| Hybrid | DWaQ 与 Parkour 按前进速度切换 | [apps/hybrid/README.md](apps/hybrid/README.md) |
+| DWaQ | 单网络行走、复位、离线检查和手柄诊断 | [apps/policies/dwaq/README.md](apps/policies/dwaq/README.md) |
+| Parkour | 深度编码器＋动作网络双 ONNX 推理 | [apps/policies/parkour/README.md](apps/policies/parkour/README.md) |
+| Hybrid | DWaQ 与 Parkour 按前进速度切换 | [apps/policies/hybrid/README.md](apps/policies/hybrid/README.md) |
 | 仿真 | 外部 MuJoCo、地形、任务相机和 door | [apps/simulation/README.md](apps/simulation/README.md) |
+| 头部标定 | 利用双手轮廓求解头部后仰角、旋转轴和相机外参（从源码运行） | [apps/head_calibration/README.md](apps/head_calibration/README.md) |
 | RealSense | C++ 深度采集、相机检查和独立网页预览 | [apps/realsense/README.md](apps/realsense/README.md) |
 | 关节监控 | 只读关节、IMU、目标与空跑网页 | [apps/monitor/README.md](apps/monitor/README.md) |
 | 任务档案 | 组合程序/策略、场景、机器人和相机 | [profiles/README.md](profiles/README.md) |
-| 相机模块 | 流格式、视场、RGB–Depth 外参和官方参数 | [cameras/README.md](cameras/README.md) |
-| 机器人模块 | 标准头部和后仰安装配置 | [robots/README.md](robots/README.md) |
+| 相机模块 | 流格式、视场、RGB–Depth 外参和官方参数 | [profiles/configs/cameras/README.md](profiles/configs/cameras/README.md) |
+| 机器人模块 | 标准头部和后仰安装配置 | [profiles/configs/robots/README.md](profiles/configs/robots/README.md) |
 | 公共控制底座 | 控制循环、DDS、推理线程、输入与硬件检查 | [common/README.md](common/README.md) |
 
 补充文档：
@@ -33,16 +34,17 @@
 ## 文件架构
 
 ```text
-apps/        各控制器、仿真、RealSense 和只读网页工具（每个目录附 README）
-common/      公共控制与推理模块（header-only）
-profiles/    任务档案：组合策略程序、场景、机器人与相机
-cameras/     相机模块：流格式、视场和外参
-robots/      机器人模块：标准头部与后仰安装
-docs/        硬件、网页、部署和 Parkour 专项说明
-scripts/     ARM64 机器人环境配置
-cmake/       构建信息模板
-build/       本机构建产物
-install/     可部署安装目录
+apps/                       控制器、仿真、相机工具和只读网页工具
+  policies/                 DWaQ、Hybrid 和 Parkour 控制器
+common/                     公共控制与推理模块（header-only）
+profiles/                   任务档案：组合策略程序、场景、机器人与相机
+  configs/cameras/          相机流格式、视场和外参
+  configs/robots/           机器人标准头部与后仰安装配置
+docs/                       硬件、网页、部署和 Parkour 专项说明
+scripts/                    ARM64 机器人环境配置
+cmake/                      构建信息模板
+build/                      本机构建产物
+install/                    可部署安装目录
 ```
 
 每个 C++ 控制器的源码入口固定为 `src/main.cpp`（入口）、`src/options.cpp`（参数解析）和 `src/controller.cpp`（控制循环）。跨程序实现放在 `common/`，不在任务间复制。任务与模块解耦：模块文件按自身命名，任务组合只发生在 `profiles/`。
@@ -159,5 +161,5 @@ cpack -G TGZ
 - 仓库不构建自动化测试；离线检查、空跑和仿真不能替代实机运动验收。
 - 实机使用 DDS 域 `0` 和连接控制板的网卡，仿真使用正数域和 `lo`，两端域号必须一致。
 - 各程序 JSON 配置仅在启动时读取，修改后须重启生效。
-- D435 单深度传感器同一时刻只能开一路流，原生深度流与 Parkour 策略管线在实机互斥（详见 [相机模块说明](cameras/README.md)）。
+- D435 单深度传感器同一时刻只能开一路流，原生深度流与 Parkour 策略管线在实机互斥（详见 [相机模块说明](profiles/configs/cameras/README.md)）。
 - 仿真器已内置于 `third_party/unitree_mujoco`（来源见 [ORIGIN.md](ORIGIN.md)）；`--mujoco-root` 可指向其他等价检出路径。

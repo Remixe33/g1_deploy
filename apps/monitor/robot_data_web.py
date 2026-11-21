@@ -2,7 +2,7 @@
 
 仿真由 sim.py 进程内托管（--source sim 由 sim.py 注入）；实机独立运行：
   python3 apps/monitor/robot_data_web.py --source realsense \
-      --camera-config cameras/d435_rgbd.json --domain 0 --interface eth0
+      --camera-config profiles/configs/cameras/d435_rgbd.json --domain 0 --interface eth0
 """
 from joint_monitor import main
 

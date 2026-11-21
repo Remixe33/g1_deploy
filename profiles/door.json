@@ -1,14 +1,14 @@
 {
   "description": "door task: dwaq + doors scene + head-back robot + native 720p camera",
   "program": "dwaq",
-  "policy_config": "../apps/dwaq/config/g1_locomotion.json",
+  "policy_config": "../apps/policies/dwaq/config/g1_locomotion.json",
   "scene": {
     "terrain": "doors"
   },
   "robot": {
-    "config": "../robots/g1_head_back_20deg.json"
+    "config": "configs/robots/g1_head_back_20deg.json"
   },
   "camera": {
-    "config": "../cameras/d435_rgbd.json"
+    "config": "configs/cameras/d435_rgbd.json"
   }
 }

@@ -23,11 +23,11 @@
 直接运行构建产物时使用长参数：
 
 ```bash
-./build/g1_dwaq --check-policy --config apps/dwaq/config/g1_locomotion.json
+./build/g1_dwaq --check-policy --config apps/policies/dwaq/config/g1_locomotion.json
 ./build/g1_dwaq --sim --domain 1 --interface lo \
-  --config apps/dwaq/config/g1_locomotion.json
+  --config apps/policies/dwaq/config/g1_locomotion.json
 ./build/g1_dwaq --hardware-read-only --domain 0 --interface eth0 \
-  --config apps/dwaq/config/g1_locomotion.json
+  --config apps/policies/dwaq/config/g1_locomotion.json
 ```
 
 ## 输入与控制
@@ -80,7 +80,7 @@ observation [1,96] + observation_history [1,480] → actions [1,29]
 - `hardware`：关节限界、状态超时、温度、倾角和停止阻尼。
 - `reset_seconds`：复位插值时长，默认 3 秒。
 
-模型与配置来源及 SHA256 见 [../../ORIGIN.md](../../ORIGIN.md)。
+模型与配置来源及 SHA256 见 [模型与资产来源](../../../ORIGIN.md)。
 
 ## 运行与安全边界
 
@@ -91,4 +91,4 @@ observation [1,96] + observation_history [1,480] → actions [1,29]
 - 停止时先执行阻尼，再等待策略线程退出。
 - `mode_machine=5`、CRC 和硬件型号检查不得通过修改常量绕过。
 
-详见 [硬件控制说明](../../docs/HARDWARE.md)。源码结构为 `src/main.cpp`（入口）、`src/options.cpp`（参数）、`src/controller.cpp`（控制循环）和 `include/g1_locomotion_policy.h`（策略）。
+详见 [硬件控制说明](../../../docs/HARDWARE.md)。源码结构为 `src/main.cpp`（入口）、`src/options.cpp`（参数）、`src/controller.cpp`（控制循环）和 `include/g1_locomotion_policy.h`（策略）。

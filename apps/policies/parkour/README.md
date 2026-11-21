@@ -10,7 +10,7 @@
 ./g1 parkour real eth0          # 实机，自动管理相机，默认空跑
 ```
 
-也可使用 `bash apps/parkour/parkour.sh check|sim|real ...`。直接运行构建产物：
+也可使用 `bash apps/policies/parkour/parkour.sh check|sim|real ...`。直接运行构建产物：
 
 ```bash
 ./build/g1_parkour --sim --domain 1 --interface lo
@@ -36,7 +36,7 @@
 - `config/realsense_parkour.json`：实机深度预处理和相机外参。
 - `models/0-depth_encoder.onnx`：深度编码器。
 - `models/actor.onnx`：动作网络。
-- `../../cameras/d435_depth_480x270_60hz.json`：Parkour 相机流配置。
+- [`d435_depth_480x270_60hz.json`](../../../profiles/configs/cameras/d435_depth_480x270_60hz.json)：Parkour 相机流配置。
 
 `reset_seconds` 默认 3 秒，策略周期为 20 ms。修改配置后需重启。
 
@@ -56,4 +56,4 @@
 - `./build/g1_camera_check` 只读验证相机，不初始化 DDS 或发布电机命令。
 - 没有 RealSense C++ SDK 时仍可构建仿真和离线检查；实机启动会明确报错。
 
-相机链路、深度历史和模型来源详见 [Parkour 与 RealSense 说明](../../docs/PARKOUR.md)，硬件接管见 [硬件控制说明](../../docs/HARDWARE.md)。
+相机链路、深度历史和模型来源详见 [Parkour 与 RealSense 说明](../../../docs/PARKOUR.md)，硬件接管见 [硬件控制说明](../../../docs/HARDWARE.md)。

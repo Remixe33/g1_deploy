@@ -23,10 +23,10 @@ In this repository it lives in `apps/monitor/joint_monitor.py` and
 `apps/monitor/monitor.sh` replaces the robot-specific absolute-path launcher with a
 relocatable source/install launcher. Python SDK and CycloneDDS are external dependencies.
 
-Model: `apps/dwaq/models/policy.onnx`
+Model: `apps/policies/dwaq/models/policy.onnx`
 SHA256: `9b0675da43e047084fac72fab9221d54c5306e9f7f4ccd36e651a61841d2d13e`
 
-Configuration: `apps/dwaq/config/g1_locomotion.json`
+Configuration: `apps/policies/dwaq/config/g1_locomotion.json`
 Original SHA256: `09f7c133dc5e043aed7572d545e51f12dadf59cd11bcafa338e452c890db0c59`
 Current SHA256: `568731c0f88d0ad40aa9fc3dc81b9389b0c6b07244f65d7ce29c952183b00a81`
 The current model is copied from
@@ -39,7 +39,7 @@ The 20 ms period, joint mapping, default pose, action scale, observation scales
 and command ranges match the training run.
 
 The DreamWaQ deployment configuration is serialized as JSON.
-Parkour maintains its own `hardware` section in `apps/parkour/config/g1_parkour.json`; hardware settings are no longer shared between programs.
+Parkour maintains its own `hardware` section in `apps/policies/parkour/config/g1_parkour.json`; hardware settings are no longer shared between programs.
 
 Model paths are configured in each program's JSON, relative to the configuration directory.
 

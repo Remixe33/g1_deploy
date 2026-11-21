@@ -7,7 +7,7 @@ if [[ -x "$script_dir/bin/g1_$application" ]]; then
     root_dir="$script_dir"
     controller="$root_dir/bin/g1_$application"
 else
-    root_dir="$(cd -- "$script_dir/../.." && pwd)"
+    root_dir="$(cd -- "$script_dir/../../.." && pwd)"
     controller="$root_dir/build/g1_$application"
 fi
 usage() {
@@ -32,7 +32,7 @@ fi
 [[ -x "$controller" ]] || { echo "Missing executable: $controller" >&2; exit 1; }
 export LD_LIBRARY_PATH="$root_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export G1_PROFILES_DIR="$root_dir/profiles"
-common=(--config "$root_dir/apps/$application/config/g1_$application.json")
+common=(--config "$root_dir/apps/policies/$application/config/g1_$application.json")
 case "$mode" in
     check) exec "$controller" "${common[@]}" --check-policy "$@" ;;
     sim) exec "$controller" "${common[@]}" --sim --domain 1 --interface lo "$@" ;;

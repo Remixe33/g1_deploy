@@ -11,7 +11,7 @@
 | `mock` | 合成斜坡深度 + 彩条 | 无设备开发验证 |
 | `none`（默认） | 无相机 | 纯关节监控 |
 
-相机模块来自 `cameras/*.json`；door 用 `d435_rgbd.json`（640×480@30，`pipeline: none`）。实机单 D435 的深度流互斥规则见 [相机模块说明](../../cameras/README.md)。
+相机模块来自 `profiles/configs/cameras/*.json`；door 用 `d435_rgbd.json`（640×480@30，`pipeline: none`）。实机单 D435 的深度流互斥规则见 [相机模块说明](../../profiles/configs/cameras/README.md)。
 
 ## 启动
 
@@ -19,7 +19,7 @@
 # 仿真：sim.py --profile door 自动托管数据网页，无需单独启动；
 # 浏览器打开 http://127.0.0.1:8765/
 .venv/bin/python apps/monitor/robot_data_web.py --source realsense \
-  --camera-config cameras/d435_rgbd.json --domain 0 --interface eth0   # 实机独立预览/录制
+  --camera-config profiles/configs/cameras/d435_rgbd.json --domain 0 --interface eth0   # 实机独立预览/录制
 .venv/bin/python apps/monitor/robot_data_web.py --source mock                   # 无设备验证
 bash apps/monitor/monitor.sh eth0 0.0.0.0 8765                         # 旧行为：纯关节监控（域 0）
 ```

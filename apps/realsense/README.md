@@ -6,10 +6,10 @@
 
 ```bash
 ./build/g1_camera_check
-./build/g1_camera_check --camera-config cameras/d435_rgbd.json
+./build/g1_camera_check --camera-config profiles/configs/cameras/d435_rgbd.json
 ```
 
-程序只采集并验证 60 张新鲜深度帧，不初始化 DDS、不发送机器人命令。D435 door 配置默认 640×480@30，其他格式见 [相机模块说明](../../cameras/README.md)。
+程序只采集并验证 60 张新鲜深度帧，不初始化 DDS、不发送机器人命令。D435 door 配置默认 640×480@30，其他格式见 [相机模块说明](../../profiles/configs/cameras/README.md)。
 
 构建自动检测 `librealsense2` C++ SDK；机器人构建建议使用：
 

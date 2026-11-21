@@ -8,10 +8,10 @@
 任务 = 程序/策略 + 场景 + 机器人 + 相机
 ```
 
-- 程序/策略：各 `apps/<程序>/config/` 中的模型和部署参数。
+- 程序/策略：各 `apps/policies/<程序>/config/` 中的部署参数和模型路径。
 - 场景：`scene.terrain` 选择外部原场景或本项目生成的地形。
-- 机器人：`robots/*.json` 描述头部安装等机器人属性。
-- 相机：`cameras/*.json` 描述流格式、视场、安装外参和处理管线。
+- 机器人：`configs/robots/*.json` 描述头部安装等机器人属性。
+- 相机：`configs/cameras/*.json` 描述流格式、视场、安装外参和处理管线。
 
 ## 当前档案
 
@@ -25,10 +25,10 @@
 ```json
 {
   "program": "dwaq",
-  "policy_config": "../apps/dwaq/config/g1_locomotion.json",
+  "policy_config": "../apps/policies/dwaq/config/g1_locomotion.json",
   "scene": {"terrain": "doors"},
-  "robot": {"config": "../robots/g1_head_back_20deg.json"},
-  "camera": {"config": "../cameras/d435_rgbd.json"}
+  "robot": {"config": "configs/robots/g1_head_back_20deg.json"},
+  "camera": {"config": "configs/cameras/d435_rgbd.json"}
 }
 ```
 

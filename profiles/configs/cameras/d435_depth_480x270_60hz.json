@@ -1,5 +1,5 @@
 {
-  "description": "D435 depth stream at 480x270@60 (Z16); feeds the parkour policy preprocessing pipeline (see apps/parkour/config/realsense_parkour.json).",
+  "description": "D435 depth stream at 480x270@60 (Z16); feeds the parkour policy preprocessing pipeline (see apps/policies/parkour/config/realsense_parkour.json).",
   "stream": {
     "width": 480,
     "height": 270,

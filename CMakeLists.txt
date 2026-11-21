@@ -63,31 +63,31 @@ set_target_properties(g1_camera_check PROPERTIES INSTALL_RPATH "$ORIGIN/../lib"
 install(TARGETS g1_camera_check RUNTIME DESTINATION bin)
 
 add_executable(g1_dwaq
-    "${REPOSITORY_ROOT}/apps/dwaq/src/main.cpp"
-    "${REPOSITORY_ROOT}/apps/dwaq/src/options.cpp"
-    "${REPOSITORY_ROOT}/apps/dwaq/src/controller.cpp")
-target_include_directories(g1_dwaq PRIVATE "${REPOSITORY_ROOT}/apps/dwaq/include" "${COMMON_INCLUDE}" "${ORT_INCLUDE}")
+    "${REPOSITORY_ROOT}/apps/policies/dwaq/src/main.cpp"
+    "${REPOSITORY_ROOT}/apps/policies/dwaq/src/options.cpp"
+    "${REPOSITORY_ROOT}/apps/policies/dwaq/src/controller.cpp")
+target_include_directories(g1_dwaq PRIVATE "${REPOSITORY_ROOT}/apps/policies/dwaq/include" "${COMMON_INCLUDE}" "${ORT_INCLUDE}")
 target_link_libraries(g1_dwaq PRIVATE unitree_sdk2 Boost::boost yaml-cpp "${ORT_LIBRARY}" Threads::Threads)
 target_compile_definitions(g1_dwaq PRIVATE G1_WITH_POLICY
-    G1_POLICY_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/dwaq/config/g1_locomotion.json"
+    G1_POLICY_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/policies/dwaq/config/g1_locomotion.json"
     G1_PROFILES_DIR="${G1_PROFILES_DIR}")
 add_executable(g1_parkour
-    "${REPOSITORY_ROOT}/apps/parkour/src/main.cpp"
-    "${REPOSITORY_ROOT}/apps/parkour/src/options.cpp"
-    "${REPOSITORY_ROOT}/apps/parkour/src/controller.cpp")
-target_include_directories(g1_parkour PRIVATE "${REPOSITORY_ROOT}/apps/parkour/include" "${COMMON_INCLUDE}" "${ORT_INCLUDE}" ${OpenCV_INCLUDE_DIRS})
+    "${REPOSITORY_ROOT}/apps/policies/parkour/src/main.cpp"
+    "${REPOSITORY_ROOT}/apps/policies/parkour/src/options.cpp"
+    "${REPOSITORY_ROOT}/apps/policies/parkour/src/controller.cpp")
+target_include_directories(g1_parkour PRIVATE "${REPOSITORY_ROOT}/apps/policies/parkour/include" "${COMMON_INCLUDE}" "${ORT_INCLUDE}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(g1_parkour PRIVATE g1_depth_camera unitree_sdk2 Boost::boost yaml-cpp "${ORT_LIBRARY}" ${OpenCV_LIBS} Threads::Threads)
 target_compile_definitions(g1_parkour PRIVATE
-    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/parkour/config/g1_parkour.json"
+    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/policies/parkour/config/g1_parkour.json"
     G1_PROFILES_DIR="${G1_PROFILES_DIR}")
 add_executable(g1_hybrid
-    apps/hybrid/src/main.cpp apps/hybrid/src/options.cpp apps/hybrid/src/controller.cpp
-    apps/parkour/src/options.cpp apps/parkour/src/controller.cpp)
-target_include_directories(g1_hybrid PRIVATE apps/hybrid/include apps/dwaq/include apps/parkour/include
+    apps/policies/hybrid/src/main.cpp apps/policies/hybrid/src/options.cpp apps/policies/hybrid/src/controller.cpp
+    apps/policies/parkour/src/options.cpp apps/policies/parkour/src/controller.cpp)
+target_include_directories(g1_hybrid PRIVATE apps/policies/hybrid/include apps/policies/dwaq/include apps/policies/parkour/include
     "${COMMON_INCLUDE}" "${ORT_INCLUDE}" ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(g1_hybrid PRIVATE g1_depth_camera unitree_sdk2 Boost::boost yaml-cpp "${ORT_LIBRARY}" ${OpenCV_LIBS} Threads::Threads)
 target_compile_definitions(g1_hybrid PRIVATE
-    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/hybrid/config/g1_hybrid.json"
+    G1_PARKOUR_DEFAULT_CONFIG="${REPOSITORY_ROOT}/apps/policies/hybrid/config/g1_hybrid.json"
     G1_PROFILES_DIR="${G1_PROFILES_DIR}")
 set_target_properties(g1_parkour g1_hybrid PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 # Launcher passes package-local resources. Keep ORT local after installation.
@@ -102,29 +102,26 @@ endif()
 
 install(TARGETS g1_dwaq g1_parkour g1_hybrid RUNTIME DESTINATION bin)
 install(DIRECTORY "${G1_PROFILES_DIR}/" DESTINATION profiles)
-install(DIRECTORY "${REPOSITORY_ROOT}/cameras" DESTINATION .)
-install(DIRECTORY "${REPOSITORY_ROOT}/robots" DESTINATION .)
-install(FILES apps/dwaq/README.md DESTINATION apps/dwaq)
-install(FILES apps/parkour/README.md DESTINATION apps/parkour)
-install(FILES apps/hybrid/README.md DESTINATION apps/hybrid)
+install(FILES apps/policies/dwaq/README.md DESTINATION apps/policies/dwaq)
+install(FILES apps/policies/parkour/README.md DESTINATION apps/policies/parkour)
+install(FILES apps/policies/hybrid/README.md DESTINATION apps/policies/hybrid)
 install(FILES apps/simulation/README.md DESTINATION apps/simulation)
+install(FILES apps/head_calibration/README.md apps/head_calibration/real-config.example.json
+    DESTINATION apps/head_calibration)
 install(FILES apps/realsense/README.md DESTINATION apps/realsense)
 install(FILES apps/monitor/README.md DESTINATION apps/monitor)
 install(FILES common/README.md DESTINATION common)
-install(FILES profiles/README.md DESTINATION profiles)
-install(FILES cameras/README.md DESTINATION cameras)
-install(FILES robots/README.md DESTINATION robots)
-install(FILES apps/hybrid/config/g1_hybrid.json DESTINATION apps/hybrid/config)
-install(PROGRAMS apps/hybrid/hybrid.sh DESTINATION . RENAME hybrid)
-install(DIRECTORY "${REPOSITORY_ROOT}/apps/parkour/models" DESTINATION apps/parkour)
-install(FILES "${REPOSITORY_ROOT}/apps/parkour/config/g1_parkour.json" "${REPOSITORY_ROOT}/apps/parkour/config/realsense_parkour.json" DESTINATION apps/parkour/config)
+install(FILES apps/policies/hybrid/config/g1_hybrid.json DESTINATION apps/policies/hybrid/config)
+install(PROGRAMS apps/policies/hybrid/hybrid.sh DESTINATION . RENAME hybrid)
+install(DIRECTORY "${REPOSITORY_ROOT}/apps/policies/parkour/models" DESTINATION apps/policies/parkour)
+install(FILES "${REPOSITORY_ROOT}/apps/policies/parkour/config/g1_parkour.json" "${REPOSITORY_ROOT}/apps/policies/parkour/config/realsense_parkour.json" DESTINATION apps/policies/parkour/config)
 install(FILES "${REPOSITORY_ROOT}/apps/realsense/realsense_web.py" "${REPOSITORY_ROOT}/apps/realsense/requirements.txt" DESTINATION apps/realsense)
 install(FILES "${REPOSITORY_ROOT}/apps/realsense/static/realsense.html" DESTINATION apps/realsense/static)
 install(PROGRAMS "${REPOSITORY_ROOT}/apps/realsense/realsense.sh" DESTINATION . RENAME realsense)
-install(PROGRAMS "${REPOSITORY_ROOT}/apps/parkour/parkour.sh" DESTINATION . RENAME parkour)
+install(PROGRAMS "${REPOSITORY_ROOT}/apps/policies/parkour/parkour.sh" DESTINATION . RENAME parkour)
 install(FILES "${REPOSITORY_ROOT}/docs/PARKOUR.md" DESTINATION docs)
-install(FILES "${REPOSITORY_ROOT}/apps/dwaq/models/policy.onnx" DESTINATION apps/dwaq/models)
-install(FILES "${REPOSITORY_ROOT}/apps/dwaq/config/g1_locomotion.json" DESTINATION apps/dwaq/config)
+install(FILES "${REPOSITORY_ROOT}/apps/policies/dwaq/models/policy.onnx" DESTINATION apps/policies/dwaq/models)
+install(FILES "${REPOSITORY_ROOT}/apps/policies/dwaq/config/g1_locomotion.json" DESTINATION apps/policies/dwaq/config)
 # Preserve SONAME symlinks and their targets from the selected native ORT release.
 install(DIRECTORY "${ONNXRUNTIME_ROOT}/lib/" DESTINATION lib
     FILES_MATCHING PATTERN "libonnxruntime.so*" PATTERN "libonnxruntime_providers_shared.so*")

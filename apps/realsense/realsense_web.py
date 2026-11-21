@@ -393,7 +393,7 @@ def main():
     parser.add_argument("--color-width", type=int, default=424)
     parser.add_argument("--color-height", type=int, default=240)
     parser.add_argument("--color-fps", type=int, default=30)
-    parser.add_argument("--profile", type=Path, default=ROOT/"apps/parkour/config/realsense_parkour.json")
+    parser.add_argument("--profile", type=Path, default=ROOT/"apps/policies/parkour/config/realsense_parkour.json")
     parser.add_argument("--token", default="", help="Optional HTTP Basic password (user: camera)")
     parser.add_argument("--mock", action="store_true")
     args = parser.parse_args()
