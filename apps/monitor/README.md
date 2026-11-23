@@ -7,13 +7,17 @@
 | `--source` | 数据来源 | 场景 |
 | --- | --- | --- |
 | `sim` | 仿真进程内注入（`sim.py --profile door` 自动托管，无需单独启动） | door 档案仿真 |
-| `realsense` | 实机 D435（pyrealsense2，读 `--camera-config` 相机模块） | 独立预览/录制（与实机控制器 USB 互斥） |
+| `realsense` | 实机 D435（pyrealsense2，读 `--camera-config` 相机模块） | 独立预览/录制，可与 DWaQ 同时启动 |
 | `mock` | 合成斜坡深度 + 彩条 | 无设备开发验证 |
 | `none`（默认） | 无相机 | 纯关节监控 |
 
 相机模块来自 `profiles/configs/cameras/*.json`；door 用 `d435_rgbd.json`（640×480@30，`pipeline: none`）。实机单 D435 的深度流互斥规则见 [相机模块说明](../../profiles/configs/cameras/README.md)。
 
+在 G1 机载开发机 PC2 上启动实机监控后，网页可独立显示通过 DDS 收到的关节和 IMU 状态，以及本机 D435 的画面。使用 `d435_rgbd.json` 时，网页收到彩色帧后显示 RGB 窗格。DWaQ 不打开相机，Parkour 和 Hybrid 实机控制器则会占用同一台 D435。
+
 ## 启动
+
+配置实机网卡后，可以用 `./g1 monitor` 开启 D435 RGB-D、关节和 IMU 监控。Parkour 或 Hybrid 占用相机时，用 `./g1 monitor --joints-only` 查看机器人状态。网卡和工控机访问地址的配置见 [实机部署](../../docs/ROBOT_SETUP.md)。
 
 ```bash
 # 仿真：sim.py --profile door 自动托管数据网页，无需单独启动；

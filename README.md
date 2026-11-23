@@ -16,7 +16,7 @@
 | 仿真 | 外部 MuJoCo、地形、任务相机和 door | [apps/simulation/README.md](apps/simulation/README.md) |
 | 头部标定 | 利用双手轮廓求解头部后仰角、旋转轴和相机外参（从源码运行） | [apps/head_calibration/README.md](apps/head_calibration/README.md) |
 | RealSense | C++ 深度采集、相机检查和独立网页预览 | [apps/realsense/README.md](apps/realsense/README.md) |
-| 关节监控 | 只读关节、IMU、目标与空跑网页 | [apps/monitor/README.md](apps/monitor/README.md) |
+| 数据监控 | 关节、IMU、空跑目标、RGB-D 预览和录制 | [apps/monitor/README.md](apps/monitor/README.md) |
 | 任务档案 | 组合程序/策略、场景、机器人和相机 | [profiles/README.md](profiles/README.md) |
 | 相机模块 | 流格式、视场、RGB–Depth 外参和官方参数 | [profiles/configs/cameras/README.md](profiles/configs/cameras/README.md) |
 | 机器人模块 | 标准头部和后仰安装配置 | [profiles/configs/robots/README.md](profiles/configs/robots/README.md) |
@@ -65,12 +65,12 @@ cmake --build build -j4
 cmake --install build
 ```
 
-源码根目录和安装目录使用相同的 `./g1 ...` 命令。ORT 随包安装，SDK2/CycloneDDS、yaml-cpp 和系统运行库由目标环境提供。仿真启动器 `apps/simulation/sim.py` 不随安装包安装，需从源码目录运行。
+实机任务和监控可从源码根目录或安装目录启动。ORT 随包安装，SDK2/CycloneDDS、yaml-cpp 和系统运行库由目标环境提供。运行 MuJoCo 仿真需要带仿真资产的源码目录。
 
 ```bash
 ldd install/bin/g1_dwaq       # 不应出现 not found
 cd install
-./g1 check                    # 旧 DWaQ 离线入口，兼容保留
+./g1 dwaq check               # 离线检查模型，不连接 DDS
 ```
 
 需要当前架构的压缩包时：
@@ -80,82 +80,56 @@ cd build
 cpack -G TGZ
 ```
 
-## 命令说明
+## 任务启动
 
-统一入口 `./g1 <dwaq|parkour|hybrid> <check|sim|real>`，源码根目录和安装目录均可使用：
+启动器按任务档案选择策略、场景、机器人和相机。以下以 `door` 为例，任务名可换成 `dwaq`、`parkour` 或 `hybrid`。详见 [任务档案说明](profiles/README.md)。
 
-```bash
-./g1 dwaq check        # 离线加载模型推理一次，不连 DDS（parkour/hybrid 同理）
-./g1 dwaq sim --domain 1
-./g1 dwaq real eth0    # 实机：DDS 域 0 + 连接控制板的网卡
-```
+### 仿真
 
-`./g1 run eth0` 等旧命令仍兼容。网页监控与相机预览作为独立服务启动：
+在工控机上以同一用户开两个终端，从源码目录分别启动场景和策略。同一时间运行一套仿真。
 
 ```bash
-./g1 monitor eth0 [HOST] [PORT]     # 只读关节、IMU、目标与空跑网页
-./g1 realsense [选项]               # 独立 RealSense 网页预览
+./g1 task door sim scene       # 终端一，启动 MuJoCo
+./g1 task door sim policy      # 终端二，启动档案指定的策略
 ```
 
-任务档案把策略程序、场景、机器人与相机组合为一项任务：
+两端默认使用 `lo` 和 DDS 域 `1`。如用 `--domain` 更换域号，两个终端须使用同一个正数域号。场景命令可加 `--follow` 跟随机器人。
 
-```bash
-./g1 dwaq sim --domain 1 --profile door
-./g1 parkour sim --domain 1 --profile parkour
-./g1 hybrid sim --domain 1 --profile hybrid
-```
+`door` 档案加载门场景、后仰 20° 的头部和 RGB-D 相机，由 DWaQ 提供行走控制。带相机的档案在 `http://127.0.0.1:8765/` 提供监控和录制。`door` 显示 RGB 和深度，`parkour`、`hybrid` 显示原始深度和模型输入。`dwaq` 档案没有配置相机网页。录制输出到 `logs/recordings/`，`door` 录制包括 RGB 与深度伪彩 MP4、PLY 点云、状态 CSV 和元数据。详见 [仿真说明](apps/simulation/README.md) 和 [录制格式](apps/monitor/README.md#录制格式)。
 
-不带 `--profile` 时使用各程序原有默认配置。字段和兼容规则见 [任务档案说明](profiles/README.md)。
+以 DWaQ 为例，按 `9/Start` 启用输出，再按 `p/X` 复位，约 3 秒后按 `r/A` 进入策略。键盘用 `w/s/a/d/q/e` 移动或转向，`x` 清零，空格停止。
 
-仿真启动器 `apps/simulation/sim.py` 的选项（`--profile`、`--terrain`、`--depth-preview`、`--fov-debug`、`--follow`、`--window-backend` 等）见 [仿真说明](apps/simulation/README.md)；仿真与控制器须同机同用户，一次只运行一个控制器。
-
-只读检查与诊断：
-
-```bash
-./g1 interfaces        # 列出网卡与到控制板的路由
-./g1 read-only eth0    # 只读 LowState/CRC/机型/电机/IMU 检查
-./g1 joystick          # 手柄输入诊断
-```
-
-仿真启动时自动识别唯一兼容手柄，无需设置 `--joystick`；也可用该参数显式指定设备。没有手柄时使用键盘，多个兼容手柄时要求明确选择。自动识别只在启动时执行，不支持热插拔重连；实机只使用原配遥控器。
+仿真启动时自动识别唯一兼容手柄。没有手柄时使用键盘，有多个兼容手柄时在策略命令后加 `--joystick <设备>`。自动识别只在启动时执行，不支持热插拔重连。
 
 仿真中按手柄 `Select`（Xbox 的 Back/View 键），或在 MuJoCo 窗口按 `V`，可依次切换跟随、机身后方和第一人称视角。只启动场景也可以切换。
 
-## 操作示例
+### 实机
 
-### door 任务（仿真，两个终端）
-
-终端一，任务档案驱动仿真（doors 场景 + 头部后仰 20° + RGB/Depth 双视角预览）：
+在 PC2 将 `.g1-onboard.conf.example` 复制为 `.g1-onboard.conf`。用 `./g1 interfaces` 查看通往 PC1 的 DDS 网卡，取消配置文件中 `ROBOT_INTERFACE` 的注释并填入实际网卡名。随后从工控机开两个 SSH 终端登录 PC2，分别运行：
 
 ```bash
-.venv/bin/python apps/simulation/sim.py \
-  --profile door --follow
+./g1 task door real            # 终端一，启动档案指定的策略，初始为空跑
+./g1 monitor                   # 终端二，关节、IMU、D435 RGB-D 和录制
 ```
 
-终端二，DWaQ 行走控制：
+工控机浏览器打开 `http://<PC2的Wi-Fi-IP>:8765/`。监控可独立于策略运行。Parkour 和 Hybrid 占用 D435 时，用 `./g1 monitor --joints-only` 查看机器人状态。详见 [实机部署](docs/ROBOT_SETUP.md)。
+
+仿真 USB 手柄和实机原配遥控器使用相同按键。按 `Start` 启用输出、`X` 复位、`A` 进入策略、`Y` 清零速度、`B` 停止并退出。实机也可按 `Select` 停止。控制器终端可用空格或 Ctrl+C 停止。
+
+实机空跑时直接按 `X`，等复位完成后按 `A`。启用真实输出后须重新复位。接管后正常停止时，控制器会先发送阻尼命令。
+
+### 诊断与兼容命令
 
 ```bash
-./g1 dwaq sim --domain 1 --profile door
+./g1 interfaces        # 列出网卡与到 PC1 的路由
+./g1 read-only eth0    # 指定实际 DDS 网卡，检查 LowState、CRC、电机和 IMU
+./g1 joystick          # 手柄输入诊断
+./g1 realsense         # 独立 RealSense 网页预览
 ```
 
-运行后 door 任务仿真默认使用 DWaQ 策略进行移动控制，仿真窗口显示独立 RGB/Depth 双视角，同时自动托管**机器人数据网页**（`http://127.0.0.1:8765/`：关节/IMU/目标 + 相机 RGB/Depth 实时流 + 录制按钮，录制落盘 `logs/recordings/<时间戳>/`：RGB 与深度伪彩 MP4、**PLY 二进制点云序列**（xyz+RGB）、状态 CSV、meta.json）。行走操作：`9/Start` 接管 → `p/X` 复位（约 3 s）→ `r/A` 进策略；`w/s/a/d/q/e` 调速转向，`x/Y` 速度清零，空格停止。
+只读模式不加载策略、不创建 LowCmd 发布器、不释放官方运动服务。
 
-### Parkour / Hybrid（仿真）
-
-```bash
-.venv/bin/python apps/simulation/sim.py \
-  --terrain mixed
-./g1 parkour sim --domain 1
-```
-
-### 实机只读检查与空跑
-
-```bash
-./g1 interfaces
-./g1 read-only eth0
-```
-
-只读模式不加载策略、不创建 LowCmd 发布器、不释放官方运动服务。控制器默认空跑；实机真实输出需要显式 `Start/9` 接管，并在接管后重新复位，停止时先发送阻尼命令。
+已有脚本仍可使用 `./g1 dwaq sim --profile door`、`./g1 dwaq real eth0`、`./g1 run eth0` 和 `./g1 monitor eth0 [HOST] [PORT]` 等显式命令。需要直接指定混合地形（`--terrain mixed`）时，可沿用独立仿真入口。详见 [仿真选项](apps/simulation/README.md#启动选项)。
 
 ## 注意事项
 

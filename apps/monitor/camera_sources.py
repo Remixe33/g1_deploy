@@ -55,7 +55,9 @@ class SimSource:
         with self._condition:
             if not self._condition.wait_for(lambda: self._frame is not None, timeout=timeout):
                 return None
-            return self._frame
+            frame = self._frame
+            self._frame = None  # 等待下一次投递，避免监控线程忙等同一帧。
+            return frame
 
     def intrinsics(self):
         """仿真渲染为标准针孔：由模块视场与仿真分辨率解析内参。"""
@@ -150,6 +152,7 @@ class RealSenseSource:
         self._last_number = None
         self._color_enabled = bool(module.get("rgb"))
         self._color_stream = module.get("rgb", {}).get("stream", {})
+        self.panes = ["rgb", "depth"] if self._color_enabled else ["depth"]
 
     def open(self):
         import pyrealsense2 as rs
@@ -200,6 +203,9 @@ class RealSenseSource:
                 "fps": self.fps, "depth_scale": self._scale,
                 "intrinsics": self._intrinsics,
                 "filters": "disparity+spatial+temporal+hole_filling"}
+        if self._color_enabled:
+            info["pane_sizes"] = {"rgb": {"width": int(self._color_stream.get("width", 640)),
+                                          "height": int(self._color_stream.get("height", 480))}}
         if self.serial:
             info["serial"] = self.serial
         return info

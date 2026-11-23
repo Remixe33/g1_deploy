@@ -245,8 +245,9 @@ class JointMonitor:
     @staticmethod
     def pane_image(frame, pane):
         """生成供 JPEG 编码的 BGR 预览图。"""
-        if pane == "rgb" and getattr(frame, "rgb", None) is not None:
-            return cv2.cvtColor(np.asarray(frame.rgb), cv2.COLOR_RGB2BGR)
+        if pane == "rgb":
+            rgb = getattr(frame, "rgb", None)
+            return None if rgb is None else cv2.cvtColor(np.asarray(rgb), cv2.COLOR_RGB2BGR)
         if pane == "model" and getattr(frame, "model", None) is not None:
             values = np.clip(np.nan_to_num(np.asarray(frame.model), nan=0., posinf=1.), 0., 1.)
         else:
@@ -276,9 +277,9 @@ class JointMonitor:
                     if self.stopping.is_set():
                         break
                     seen = self.camera_sequence
-                    data = self.camera_jpegs[key]
+                    data = self.camera_jpegs.get(key)
                 if data is None:
-                    data = b""
+                    continue
                 handler.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
                                     str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n")
         except (OSError, TimeoutError):
@@ -286,13 +287,14 @@ class JointMonitor:
 
     def camera_status(self):
         with self.camera_lock:
-            jpegs = self.camera_jpegs
+            panes = sorted(self.camera_jpegs or {})
+            sequence = self.camera_sequence
         source_info = self.camera_info()
         recording = self.recorder.recording if self.recorder is not None else False
         return {"camera": {**source_info,
-                           "online": jpegs is not None,
-                           "sequence": self.camera_sequence,
-                           "panes": sorted(jpegs.keys())},
+                           "online": bool(panes),
+                           "sequence": sequence,
+                           "panes": panes},
                 "recording": {"active": recording,
                               "dir": str(self.recorder.dir) if recording else None,
                               "frames": self.recorder.frames if self.recorder is not None else 0,

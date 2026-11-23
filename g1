@@ -11,6 +11,11 @@ config="$package_dir/apps/policies/dwaq/config/g1_locomotion.json"
 usage() {
     cat <<'HELP'
 Usage:
+  ./g1 task NAME sim scene [options]       Start the task's MuJoCo scene from the checkout
+  ./g1 task NAME sim policy [options]      Start the task's simulation controller
+  ./g1 task NAME real [options]            Start the task's hardware controller
+  ./g1 dwaq real                           Start DWaQ using the configured robot interface
+  ./g1 monitor [--joints-only]             Monitor G1 and its D435 (or just robot state)
   ./g1 dwaq|parkour|hybrid check [options]   Offline ONNX inference, no DDS
   ./g1 dwaq|parkour|hybrid sim [options]     Simulation controller (start MuJoCo separately)
   ./g1 dwaq|parkour|hybrid real ROBOT_INTERFACE [options]
@@ -18,6 +23,8 @@ Usage:
   ./g1 dwaq|parkour|hybrid help             Show usage
 
 Options: --config JSON; sim also accepts --domain 1 --interface lo.
+For short hardware commands, copy .g1-onboard.conf.example to .g1-onboard.conf
+and set ROBOT_INTERFACE to the interface connecting this machine to the robot controller.
 Model paths, reset_seconds and hardware limits are configured in each program's JSON.
 Parkour/Hybrid real open RealSense directly in C++; no camera transport parameters.
 The same commands work in the source checkout and installed package.
@@ -34,9 +41,54 @@ Legacy DWaQ shortcuts remain available:
 Example interface: eth0 (use the actual onboard interface, never lo).
 run starts in dry run: X -> wait -> A previews targets without actuator commands.
 Start enables real output and clears preview; then X -> wait -> A is required again.
+Y zeroes velocity; B stops and exits. The Unitree remote also stops with Select.
 Default model/config are loaded from this package, not the build machine.
 HELP
 }
+
+validate_robot_interface() {
+    local interface="$1"
+    if [[ -z "$interface" || "$interface" == lo || "$interface" == -* ||
+          "$interface" == */* || ! -d "/sys/class/net/$interface" ]]; then
+        echo "Invalid robot network interface: ${interface:-<empty>}. Use ./g1 interfaces to find the non-loopback interface." >&2
+        exit 2
+    fi
+}
+
+load_onboard_config() {
+    onboard_dir="$package_dir"
+    if [[ "$package_dir" == */install && -f "$package_dir/../CMakeLists.txt" &&
+          -f "$package_dir/../g1" ]]; then
+        onboard_dir="$(cd -- "$package_dir/.." && pwd)"
+    fi
+    local file="$onboard_dir/.g1-onboard.conf" line
+    local assignment='^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*([^[:space:]#]+)[[:space:]]*(#.*)?$'
+    if [[ ! -f "$file" ]]; then
+        echo "Missing $file. Copy .g1-onboard.conf.example there and set ROBOT_INTERFACE." >&2
+        exit 2
+    fi
+    robot_interface=
+    monitor_host=0.0.0.0
+    monitor_port=8765
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+        if [[ "$line" =~ $assignment ]]; then
+            case "${BASH_REMATCH[1]}" in
+                ROBOT_INTERFACE) robot_interface="${BASH_REMATCH[2]}"; continue ;;
+                MONITOR_HOST) monitor_host="${BASH_REMATCH[2]}"; continue ;;
+                MONITOR_PORT) monitor_port="${BASH_REMATCH[2]}"; continue ;;
+            esac
+        fi
+        echo "Invalid setting in $file: $line" >&2
+        exit 2
+    done < "$file"
+    if [[ -z "$robot_interface" ]]; then
+        echo "Set ROBOT_INTERFACE in $file." >&2
+        exit 2
+    fi
+    validate_robot_interface "$robot_interface"
+}
+
 if (($# == 0)); then usage; exit 0; fi
 if [[ "$1" == dwaq ]]; then
     shift
@@ -51,9 +103,85 @@ if [[ "$mode" == interfaces ]]; then
     ip route get 192.168.123.161 || true
     exit 0
 fi
+if [[ "$mode" == task ]]; then
+    if [[ "${1:-}" == --help || "${1:-}" == help ]]; then usage; exit 0; fi
+    if (( $# < 2 )) || [[ ! "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+        usage >&2
+        exit 2
+    fi
+    task_name="$1"; task_mode="$2"; shift 2
+    case "$task_mode" in
+        real) ;;
+        sim)
+            case "${1:-}" in
+                scene|policy) task_mode="$1"; shift ;;
+                *) usage >&2; exit 2 ;;
+            esac ;;
+        *) usage >&2; exit 2 ;;
+    esac
+    profile="$package_dir/profiles/$task_name.json"
+    if [[ ! -f "$profile" ]]; then
+        echo "Unknown task '$task_name': missing $profile." >&2
+        exit 2
+    fi
+    program="$(python3 -c '
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    profile = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, ValueError) as error:
+    sys.exit(f"Cannot read task profile {path}: {error}")
+program = profile.get("program") if isinstance(profile, dict) else None
+if program not in ("dwaq", "parkour", "hybrid"):
+    sys.exit(f"Unsupported program {program!r} in {path}")
+print(program)
+' "$profile")"
+    for argument in "$@"; do
+        case "$argument" in
+            --profile|--profile=*|--interface|--interface=*)
+                echo "Task commands select the profile and network interface. Use the explicit launcher to set $argument." >&2
+                exit 2 ;;
+        esac
+    done
+    case "$task_mode" in
+        real)
+            load_onboard_config
+            exec "$package_dir/g1" "$program" real "$robot_interface" --profile "$profile" "$@" ;;
+        policy)
+            exec "$package_dir/g1" "$program" sim --profile "$profile" "$@" ;;
+        scene)
+            simulator="$package_dir/apps/simulation/sim.py"
+            if [[ ! -f "$simulator" ]]; then
+                echo "Run the simulation scene command from the source checkout, which includes MuJoCo assets." >&2
+                exit 2
+            fi
+            python="${PYTHON_BIN:-$package_dir/.venv/bin/python}"
+            if [[ -z "${PYTHON_BIN:-}" && ! -x "$python" ]]; then python=python3; fi
+            exec "$python" "$simulator" --profile "$profile" "$@" ;;
+    esac
+fi
 export LD_LIBRARY_PATH="$package_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export G1_PROFILES_DIR="$package_dir/profiles"
 if [[ "$mode" == monitor ]]; then
+    if [[ "${1:-}" == --help ]]; then usage; exit 0; fi
+    if (( $# == 0 )) || [[ "$1" == --joints-only ]]; then
+        (( $# <= 1 )) || { usage >&2; exit 2; }
+        load_onboard_config
+        if [[ ! "$monitor_port" =~ ^[0-9]{1,5}$ ]] ||
+           ((10#$monitor_port < 1 || 10#$monitor_port > 65535)); then
+            echo "Set MONITOR_PORT to a port from 1 to 65535 in $onboard_dir/.g1-onboard.conf." >&2
+            exit 2
+        fi
+        camera_args=()
+        if (( $# == 0 )); then
+            camera_args=(--source realsense --camera-config "$package_dir/profiles/configs/cameras/d435_rgbd.json")
+        fi
+        set -- "$robot_interface" "$monitor_host" "$monitor_port" \
+            --record-dir "$onboard_dir/logs/recordings" "${camera_args[@]}"
+    fi
     if [[ -x "$package_dir/monitor" ]]; then exec "$package_dir/monitor" "$@"; fi
     exec bash "$package_dir/apps/monitor/monitor.sh" "$@"
 fi
@@ -78,12 +206,13 @@ case "$mode" in
         exec "$controller" --check-joystick
         ;;
     read-only|run|real)
-        (($# >= 1)) || { usage >&2; exit 2; }
-        robot_interface="$1"; shift
-        [[ -n "$robot_interface" && "$robot_interface" != lo && "$robot_interface" != -* && "$robot_interface" != */* ]] || {
-            echo 'Specify the actual non-loopback robot network interface.' >&2; exit 2;
-        }
-        [[ -d "/sys/class/net/$robot_interface" ]] || { echo "No such interface: $robot_interface" >&2; exit 2; }
+        if [[ "$mode" == real && $# == 0 ]]; then
+            load_onboard_config
+        else
+            (($# >= 1)) || { usage >&2; exit 2; }
+            robot_interface="$1"; shift
+            validate_robot_interface "$robot_interface"
+        fi
         if [[ "$mode" == read-only ]]; then
             exec "$controller" --hardware-read-only --interface "$robot_interface" --domain 0 --config "$config" "$@"
         fi

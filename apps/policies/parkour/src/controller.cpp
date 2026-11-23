@@ -114,14 +114,9 @@ private:
         if(!joystick.empty()) gamepad=std::make_unique<g1_gamepad::Device>(joystick,false,false);
         else if(!hardware) gamepad=g1_gamepad::Device::OpenAuto(false,false);
         if(gamepad) log.Line()<<"Gamepad: "<<gamepad->Description()<<"\n";
-        if(!hardware) {
-            log.Line()<<g1_keys::KeyTable(g1_keys::Action::Handover, g1_keys::Action::Reset,
-                                          g1_keys::Action::Policy, g1_keys::Action::MoveForward,
-                                          g1_keys::Action::Turn, g1_keys::Action::ZeroVelocity,
-                                          g1_keys::Action::Stop);
-            log.Line()<<"Gamepad sticks use a 12% deadzone.\n";
-        }
         input=hardware?&remote.state:gamepad?&gamepad->state:nullptr;
+        keys.input = hardware ? g1_keys::Input::UnitreeRemote :
+                     gamepad ? g1_keys::Input::UsbGamepad : g1_keys::Input::Keyboard;
         if(hardware) camera=std::make_unique<g1_camera::RealSenseCamera>();
         else simulation=std::make_unique<g1_parkour::SharedInput>("observation", 32 + 2369 * sizeof(float));
         unitree::robot::ChannelFactory::Instance()->Init(domain,interface);
@@ -144,7 +139,10 @@ private:
         waiting = Clock::now();
         log.Line()<<policy.Name()<<" source="<<(hardware?"C++ RealSense USB + torso DDS IMU":"MuJoCo synchronized camera observations")
                  <<"; "<<(hardware?"in-process depth cache":"local shared memory")<<"; DDS domain "<<domain<<".\n"
-                 <<"DRY RUN: p reset, r policy; 9/Start enables real output and clears preview. Space/Select stops.\n";
+                 <<"DRY RUN / command output OFF. Reset and wait "<<reset_seconds<<" s before running the policy. "
+                   "Enabling output clears the preview and requires another reset.\n"
+                 <<keys.AvailableKeys("startup", g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                      g1_keys::Action::Stop);
     }
 
     bool ReadObservation(Clock::time_point now) {
@@ -250,7 +248,7 @@ private:
             velocity.fill(0);
             policy_worker->Pause();
             log.Line()<<"Output enabled; preview cleared; damping wait.\n"
-                      <<g1_keys::AvailableKeys("damping wait", g1_keys::Action::Reset, g1_keys::Action::Stop);
+                      <<keys.AvailableKeys("damping wait", g1_keys::Action::Reset, g1_keys::Action::Stop);
         }
     }
 
@@ -278,9 +276,9 @@ private:
             velocity.fill(0);
             if(input) input->BeginPolicy();
             log.Line()<<policy.Name()<<" policy ON."<<(powered?" Output active.\n":" Dry-run only.\n")
-                      <<g1_keys::AvailableKeys("policy", g1_keys::Action::MoveForward, g1_keys::Action::Turn,
-                                               g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
-                                               g1_keys::Action::Stop);
+                      <<keys.AvailableKeys("policy", g1_keys::Action::Move, g1_keys::Action::Turn,
+                                           g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
+                                           g1_keys::Action::Stop);
         } else log.Line()<<"Joints not near training pose; reset first\n";
     }
 
@@ -291,7 +289,7 @@ private:
                 case 'q':velocity[2]+=.1f;break;case 'e':velocity[2]-=.1f;break;
                 case 'x':velocity.fill(0);break;
             }
-            if(input) velocity=input->ControlVelocity(hardware?0:key);
+            if(input) velocity=input->ControlVelocity(key);
             policy.ClampVelocity(velocity);
             // 仿真允许低姿态和跌倒调试；此处只检查真机的躯干倾角。
             if(hardware && obs.gravity[2]>-std::cos(1.))
@@ -315,9 +313,9 @@ private:
                 if(u==1&&!holding) {
                     holding=true;
                     log.Line()<<"Holding training pose.\n"
-                              <<(powered?g1_keys::AvailableKeys("holding", g1_keys::Action::Policy,
+                              <<(powered?keys.AvailableKeys("holding", g1_keys::Action::Policy,
                                                                  g1_keys::Action::Reset, g1_keys::Action::Stop)
-                                        :g1_keys::AvailableKeys("holding, dry-run", g1_keys::Action::Policy,
+                                        :keys.AvailableKeys("holding, dry-run", g1_keys::Action::Policy,
                                                                  g1_keys::Action::Handover, g1_keys::Action::Reset,
                                                                  g1_keys::Action::Stop));
                 }
@@ -373,6 +371,7 @@ private:
     std::unique_ptr<g1_gamepad::Device> gamepad;
     g1_unitree_remote::Input remote;
     g1_gamepad::State* input = nullptr;
+    g1_keys::Layout keys{g1_keys::Input::Keyboard, g1_keys::Motion::Longitudinal};
     std::unique_ptr<g1_parkour::SharedInput> simulation;
     std::unique_ptr<g1_camera::RealSenseCamera> camera;
     g1_control::DdsStateCache<State> states;

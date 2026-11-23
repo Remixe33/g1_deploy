@@ -1,5 +1,6 @@
 #include "g1_parkour_options.h"
 #include "g1_control_profile.h"
+#include "g1_key_dictionary.h"
 #include <iostream>
 #include <net/if.h>
 #include <stdexcept>
@@ -33,8 +34,10 @@ void PrintUsage(const std::string&) {
     std::cout<<"g1_parkour --sim [--domain 1 --interface lo]\n"
         <<"g1_parkour --hardware --domain 0 --interface ROBOT_IF\n"
         <<"Common: --config JSON --check-policy; model paths, reset_seconds and hardware limits come from JSON\n"
-        <<"Simulation auto-detects F710; --joystick PATH overrides. Start enable, X reset, A policy, Y zero, B stop. Hardware: Unitree Start enable, X reset, A policy, Select stop; direct sticks. No hotplug reconnect.\n"
-        <<"Startup is dry-run. p -> wait -> r previews targets; 9/Start hands over, clears preview, then p -> r again.\n"
+        <<"Simulation auto-detects one compatible USB gamepad; --joystick PATH overrides selection. No hotplug reconnect.\n"
+        <<"Hardware uses the Unitree remote. Startup is dry-run. Reset and wait before running policy. "
+          "Enabling output clears the preview and requires another reset.\n"
+        <<g1_keys::Usage(g1_keys::Motion::Longitudinal)
         <<"Verify camera pose, torso IMU axes and joint signs before Start handover.\n";
 }
 }  // namespace g1_parkour_app

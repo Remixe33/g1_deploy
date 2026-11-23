@@ -7,16 +7,18 @@
 终端一：
 
 ```bash
-.venv/bin/python apps/simulation/sim.py --profile door --follow
+./g1 task door sim scene --follow
 ```
 
 终端二：
 
 ```bash
-./g1 dwaq sim --domain 1 --profile door
+./g1 task door sim policy
 ```
 
-door 档案（原生相机）自动托管**机器人数据网页** `http://127.0.0.1:8765/`：关节/IMU/目标 + RGB/Depth 实时流 + 录制按钮（`--record` 启动即录，落盘 `logs/recordings/`，格式见 [../monitor/README.md](../monitor/README.md)）；`--data-web=false` 可关闭，`--data-web-port` 换端口。
+两条命令都从源码目录运行，可将 `door` 同时换成 `dwaq`、`parkour` 或 `hybrid`。场景入口依次选用 `PYTHON_BIN`、源码目录的 `.venv/bin/python` 或系统 `python3`。场景和策略分别接收各自的选项，例如 `sim scene --follow` 和 `sim policy --joystick /dev/input/js0`。
+
+带相机的任务档案自动托管**机器人数据网页** `http://127.0.0.1:8765/`。`door` 显示 RGB 和深度，`parkour`、`hybrid` 显示 Raw 和 Model。场景入口支持 `--no-data-web` 关闭网页，`--data-web-port` 换端口，`--record` 启动录制。录制落盘 `logs/recordings/`，格式见 [监控与录制说明](../monitor/README.md)。
 
 不带 `--profile` 时保留原有共享仿真行为：
 
@@ -25,7 +27,7 @@ python3 apps/simulation/sim.py --domain 1
 ./g1 dwaq sim --domain 1       # 或 parkour / hybrid
 ```
 
-一次只运行一个控制器。仿真使用正数 DDS 域和 `lo`，两端域号必须一致；仅运行 DWaQ 时可加 `--no-depth`。
+同一用户在同一台机器上一次运行一套仿真。两端默认使用 DDS 域 `1` 和 `lo`。指定 `--domain` 时，两端须使用同一个正数域号。仅运行 DWaQ 且无需相机时，可以在 `dwaq` 的场景入口加 `--no-depth`。
 
 ## 启动选项
 

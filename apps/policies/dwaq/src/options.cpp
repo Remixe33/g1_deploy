@@ -1,5 +1,6 @@
 #include "g1_dwaq_options.h"
 #include "g1_control_profile.h"
+#include "g1_key_dictionary.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -50,9 +51,9 @@ void PrintUsage(const std::string& program) {
               << "Common: --config JSON (model path, reset_seconds and hardware limits are read from JSON)\n"
               << "Read-only: --hardware-read-only --domain 0 --interface ROBOT_IF\n";
     std::cout << "Offline inference: --check-policy [--config JSON]\n"
-              << "F710: --joystick /dev/input/js0; input-only check: --check-joystick [--joystick DEVICE]\n"
-              << "Hardware defaults to Unitree remote: Start enables, X reset, A policy, Select stop.\n"
-              << "Start enable, X reset, A policy; left stick XY/right stick X to move (simulation only, no RB required); Y zero, B exit.\n"
-              << "Simulation auto-detects one compatible gamepad; --joystick PATH overrides selection. No hotplug reconnect.\n";
+              << "Input-only check: --check-joystick [--joystick DEVICE]\n"
+              << "Simulation auto-detects one compatible USB gamepad; --joystick PATH overrides selection. No hotplug reconnect.\n"
+              << "Hardware uses the Unitree remote.\n"
+              << g1_keys::Usage(g1_keys::Motion::Holonomic);
 }
 }  // namespace g1_dwaq_app

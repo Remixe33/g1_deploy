@@ -1,4 +1,5 @@
 #include "g1_hybrid_options.h"
+#include "g1_key_dictionary.h"
 #include <iostream>
 
 namespace g1_hybrid_app {
@@ -9,6 +10,7 @@ void PrintUsage(const std::string& program) {
               << "Common: --config JSON --check-policy\n"
               << "DWaQ for stand/backward/turn; sustained forward command selects Parkour.\n"
               << "Switch thresholds and both policy configurations come from JSON.\n"
-              << "Startup is dry-run; Start enables, X resets, A starts policy, Select stops (F710: B stops).\n";
+              << "Startup is dry-run. Hardware uses the Unitree remote.\n"
+              << g1_keys::Usage(g1_keys::Motion::Longitudinal);
 }
 }  // namespace g1_hybrid_app

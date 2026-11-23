@@ -131,5 +131,5 @@ if ((verify_camera)); then
     "$root/build/g1_camera_check"
 fi
 printf '\nSetup complete. No controller was started.\n'
-printf 'Run: cd "%s/install"\n' "$root"
-printf './g1 monitor eth0 0.0.0.0 8765\n./g1 parkour real eth0\n'
+printf 'In %s, copy .g1-onboard.conf.example to .g1-onboard.conf and set ROBOT_INTERFACE.\n' "$root"
+printf 'Use separate terminals for ./g1 task door real and ./g1 monitor.\n'

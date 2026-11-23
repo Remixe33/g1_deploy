@@ -129,8 +129,11 @@ foreach(notice IN ITEMS LICENSE ThirdPartyNotices.txt Privacy.md VERSION_NUMBER)
     install(FILES "${ONNXRUNTIME_ROOT}/${notice}" DESTINATION licenses/onnxruntime OPTIONAL)
 endforeach()
 install(PROGRAMS "${REPOSITORY_ROOT}/g1" DESTINATION .)
+install(FILES .g1-onboard.conf.example DESTINATION .)
 install(PROGRAMS "${REPOSITORY_ROOT}/apps/monitor/monitor.sh" DESTINATION . RENAME monitor)
-install(FILES "${REPOSITORY_ROOT}/apps/monitor/joint_monitor.py" "${REPOSITORY_ROOT}/apps/monitor/requirements.txt" DESTINATION apps/monitor)
+install(FILES apps/monitor/joint_monitor.py apps/monitor/robot_data_web.py
+    apps/monitor/camera_sources.py apps/monitor/recorder.py apps/monitor/requirements.txt
+    DESTINATION apps/monitor)
 install(FILES "${REPOSITORY_ROOT}/apps/monitor/static/joint_monitor.html" DESTINATION apps/monitor/static)
 install(FILES "${REPOSITORY_ROOT}/README.md" "${REPOSITORY_ROOT}/ORIGIN.md" "${REPOSITORY_ROOT}/CHANGELOG.md" DESTINATION .)
 install(FILES "${REPOSITORY_ROOT}/docs/HARDWARE.md" DESTINATION docs)

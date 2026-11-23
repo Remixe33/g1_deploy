@@ -70,7 +70,10 @@ class DwaqController {
 public:
     explicit DwaqController(const ResetConfig& config, const g1_hardware::Limits* hardware, bool read_only, bool unitree_remote
         , g1_policy::Policy* policy, g1_gamepad::Device* gamepad
-    ) : config_(config), hardware_(hardware), read_only_(read_only), unitree_remote_(unitree_remote), state_receiver_("rt/lowstate") {
+    ) : config_(config), hardware_(hardware), read_only_(read_only), unitree_remote_(unitree_remote),
+        keys_{unitree_remote ? g1_keys::Input::UnitreeRemote :
+              gamepad ? g1_keys::Input::UsbGamepad : g1_keys::Input::Keyboard,
+              g1_keys::Motion::Holonomic}, state_receiver_("rt/lowstate") {
         policy_ = policy;
         gamepad_ = gamepad;
         if (!read_only_) {
@@ -144,21 +147,16 @@ private:
         command.mode_machine() = state.mode_machine();
         keyboard = std::make_unique<g1_control::Keyboard>();
         control_input = gamepad_ ? &gamepad_->state : unitree_remote_ ? &remote_.state : nullptr;
-        if (unitree_remote_) log.Line() << "Unitree remote: Start=real handover, X=reset, A=policy, Select=stop/exit. Direct stick velocity; R1 not required.\n";
         log.Line() << "Ready. DRY RUN / command output OFF.\n";
         start = Clock::now();
         if(policy_) policy_worker=std::make_unique<PolicyWorker>(
             [&](const PolicyObservation& input,const auto& velocity) {return policy_->Step(input.state,velocity);},
             [&] {policy_->Reset();},false,
             std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(policy_->dt)));
-        log.Line() << "Dry sequence: P -> wait (" << reset_seconds << " s) -> R, no 9. Real sequence: 9 -> P -> wait -> R.\n";
-        if (!unitree_remote_) {
-            log.Line() << g1_keys::KeyTable(g1_keys::Action::Handover, g1_keys::Action::Reset,
-                                            g1_keys::Action::Policy, g1_keys::Action::Move,
-                                            g1_keys::Action::Turn, g1_keys::Action::ZeroVelocity,
-                                            g1_keys::Action::Stop);
-            log.Line() << "Gamepad sticks use a 12% deadzone.\n";
-        }
+        log.Line() << "Reset and wait " << reset_seconds << " s before running the policy. "
+                      "Enabling output clears the preview and requires another reset.\n"
+                   << keys_.AvailableKeys("startup", g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                          g1_keys::Action::Stop);
     }
 
     bool ReadState() {
@@ -207,7 +205,7 @@ private:
 
     void TakeOver() {
         if (unitree_remote_ && !g1_control::InputReady(control_input)) {
-            log.Line() << "Center Unitree sticks before Start/9 handover.\n";
+            log.Line() << "Center the Unitree remote sticks before enabling output.\n";
         } else {
             if (hardware_) {
                 // Validate current real state before changing the official service.
@@ -234,7 +232,7 @@ private:
             if (policy_worker) policy_worker->Pause();
             output_enabled = true;
             log.Line() << "Command output ENABLED. Dry preview cleared; damping wait.\n"
-                       << g1_keys::AvailableKeys("damping wait", g1_keys::Action::Reset, g1_keys::Action::Stop);
+                       << keys_.AvailableKeys("damping wait", g1_keys::Action::Reset, g1_keys::Action::Stop);
         }
     }
 
@@ -253,7 +251,8 @@ private:
     void TryStartPolicy() {
         const bool pose_ready = g1_control::NearPose(g1_control::JointPositions(state), policy_->DefaultDds());
         if (!active || !holding || (output_enabled && !pose_ready)) {
-            log.Line() << "Policy requires completed reset. Dry run: P -> wait -> R. Real output also requires measured pose near training pose.\n";
+            log.Line() << "Wait for reset to finish before running the policy. "
+                          "Enabled output also requires the measured pose to be near the training pose.\n";
         } else if(!g1_control::InputReady(control_input)) {
             log.Line()<<(unitree_remote_ ? "Center sticks before A/policy entry.\n" : (control_input->HoldRequired() ? "Center sticks and release RB before policy entry.\n" : "Center sticks before policy entry.\n"));
         } else {
@@ -263,9 +262,9 @@ private:
             policy_active = true;
             if(control_input) control_input->BeginPolicy();
             log.Line() << (output_enabled ? "REAL" : "DRY RUN") << " locomotion policy ON; velocity = [0, 0, 0].\n"
-                       << g1_keys::AvailableKeys("policy", g1_keys::Action::Move, g1_keys::Action::Turn,
-                                                 g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
-                                                 g1_keys::Action::Stop);
+                       << keys_.AvailableKeys("policy", g1_keys::Action::Move, g1_keys::Action::Turn,
+                                              g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
+                                              g1_keys::Action::Stop);
         }
     }
 
@@ -334,9 +333,9 @@ private:
         if (u == 1.0 && !holding) {
             log.Line() << "Target interpolation complete."
                        << (output_enabled ? " Holding default pose.\n" : " Output disabled; target only.\n")
-                       << (output_enabled ? g1_keys::AvailableKeys("holding", g1_keys::Action::Policy,
+                       << (output_enabled ? keys_.AvailableKeys("holding", g1_keys::Action::Policy,
                                                                    g1_keys::Action::Reset, g1_keys::Action::Stop)
-                                          : g1_keys::AvailableKeys("holding, dry-run", g1_keys::Action::Policy,
+                                          : keys_.AvailableKeys("holding, dry-run", g1_keys::Action::Policy,
                                                                    g1_keys::Action::Handover, g1_keys::Action::Reset,
                                                                    g1_keys::Action::Stop));
             holding = true;
@@ -399,6 +398,7 @@ private:
     const g1_hardware::Limits* hardware_ = nullptr;
     bool read_only_ = false;
     bool unitree_remote_ = false;
+    const g1_keys::Layout keys_;
     g1_unitree_remote::Input remote_;
     Clock::time_point next_input_log_{};
     std::atomic<bool> output_armed_{false};

@@ -109,7 +109,7 @@ bash apps/policies/parkour/parkour.sh sim --domain 1
 bash apps/policies/parkour/parkour.sh real eth0
 ```
 
-原配遥控器沿用当前仓库映射：Start 接管、X 复位、A 策略、Select 停止。摇杆直接控制速度，无需 R1。
+原配遥控器用 Start 接管、X 复位、A 进入策略、Y 清零速度、B 停止退出。实机也可按 Select 停止。摇杆直接控制速度，无需 R1。
 Start 之前只有 `rt/g1/dry_run_target`，不会创建 `rt/lowcmd` 发布者，不释放官方运动服务。
 `p/X → 等待 → r/A` 可以先空跑，网页关节监控可显示空跑目标。空跑允许尚未达到训练姿态的机器人生成推理目标，实输出要求复位后接近训练姿态。
 

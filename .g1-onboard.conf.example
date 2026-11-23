@@ -1,0 +1,7 @@
+# Copy to .g1-onboard.conf, uncomment ROBOT_INTERFACE and set it to the
+# DDS interface that reaches PC1. Use ./g1 interfaces to find its name.
+# ROBOT_INTERFACE=eth0
+
+# Optional HTTP settings. Connect from the browser using PC2's Wi-Fi address.
+# MONITOR_HOST=0.0.0.0
+# MONITOR_PORT=8765

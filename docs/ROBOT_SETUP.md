@@ -30,20 +30,27 @@ bash scripts/setup_robot.sh --verify-camera
 bash scripts/setup_robot.sh --deps-only
 ```
 
-安装后：
+安装后，在 PC2 的部署根目录（例如 `~/g1_deploy`）配置一次机内 DDS 网卡：
 
 ```bash
-cd install
-./g1 check
-./g1 parkour check
-./g1 monitor eth0 0.0.0.0 8765
-# 另开终端；启动默认空跑：
-./g1 parkour real eth0
+cp -n .g1-onboard.conf.example .g1-onboard.conf
+./g1 interfaces
 ```
 
-关节网页：http://192.168.0.200:8765/ 。Parkour 使用进程内 C++ 相机采集，不自动启动相机网页。独立网页预览须在控制器退出后运行。
+编辑 `.g1-onboard.conf`，取消 `ROBOT_INTERFACE` 这一行的注释，并填入通往 PC1 的实际网卡名。工控机访问网页使用 PC2 的 Wi-Fi 地址。从源码目录和其下的 `install/` 启动时，共用这一份本机配置。独立解压的安装包在自身根目录配置。
 
-原配遥控器：X 复位、A 进入策略、Start 真实接管、Select 停止退出。
+随后在两个 SSH 终端中分别运行：
+
+```bash
+./g1 task door real            # 终端一，启动 DWaQ，初始为空跑
+./g1 monitor                   # 终端二，关节、IMU、D435 RGB-D 和录制
+```
+
+浏览器打开 `http://<PC2的Wi-Fi-IP>:8765/`。监控服务可单独运行，通过网页按钮开始或停止录制，数据保存到本机配置所在目录的 `logs/recordings/`。可在配置中用 `MONITOR_HOST`、`MONITOR_PORT` 调整默认的 `0.0.0.0:8765`。
+
+`./g1 task parkour real` 和 `./g1 task hybrid real` 会在策略进程内打开 D435。运行期间用 `./g1 monitor --joints-only` 查看机器人状态。需要独立 RGB-D 预览或录制时，先退出占用相机的策略。
+
+原配遥控器按键与仿真 USB 手柄一致：Start 启用输出、X 复位、A 进入策略、Y 清零速度、B 停止退出。实机也可按 Select 停止。
 空跑用 X → 等待复位完成 → A。真实控制需要现场保护，Start → X → 等待复位完成 → 摇杆回中 → A。
 配置已将左右 hip yaw 限制为 ±90°，其它关节保持原配置。
 
@@ -59,7 +66,7 @@ cd install
 - NumPy 1.26.4、CycloneDDS Python 0.10.2、宇树 Python SDK、OpenCV headless 4.11.0.86、RealSense Python 2.55.1.6486。
 - `.deps/unitree-sdk2`、`.deps/cyclonedds`、`.deps/onnxruntime`：已在此机器人验证的 ARM64 原生库；构建不再依赖其它项目目录。
 - `.deps/glibc-2.35`：Ubuntu 官方 ARM64 glibc 2.35。只有相机专用 Python 入口通过它的动态加载器启动；不修改 `/lib`、`/usr/lib`、系统加载器或全局环境变量。
-- `apps/realsense/python3-realsense.sh`：相机专用入口模板；由配置脚本复制到 `.deps/python/bin/python3-realsense`。网页监视器与控制程序继续使用原系统库。
+- `apps/realsense/python3-realsense.sh`：相机专用入口模板，由配置脚本复制到 `.deps/python/bin/python3-realsense`。RGB-D 监控和独立网页预览可使用这个入口。纯关节监控和控制程序沿用各自的常规运行库。
 - 编译 Release、安装到 `install/`，并完成两套模型的离线推理检查。已有安装会备份到 `deployment-backups/`，发现本项目控制程序正在运行则停止配置，需先由操作者退出程序。
 - 日志及包清单位于 `.deps/setup-logs/`。
 
@@ -71,4 +78,4 @@ cd install
 
 `.deps/`、`.deploy-cache/`、`build-sdk/` 和安装/构建目录已加入 Git 忽略。Git 保存配置流程和启动脚本，不保存平台二进制及本机虚拟环境。若使用 Git 将源码带到另一台机器，需要另外手动复制缓存；仅复制源码不足以离线配置。不得把旧目录的虚拟环境整体移动后直接使用，应在目标目录重新运行配置脚本。
 
-此脚本不设置开机自启，也不执行电机接管。相机采集模式为 480×270、60 Hz 深度，实际采集频率由页面/日志统计。
+此脚本不设置开机自启，也不执行电机接管。Parkour 和 Hybrid 默认使用 480×270、60 Hz 深度。独立 RGB-D 监控默认使用 640×480、30 Hz。实际采集频率由页面和日志统计。
