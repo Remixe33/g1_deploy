@@ -133,9 +133,19 @@ def main():
                 print(f"Terrain {category}: x={start:.2f}..{end:.2f} m, lane center y={y:.2f} m, along +X", flush=True)
         import config
         from observation_bridge import install_observation_bridge
+        from viewer_camera import add_viewer_cameras, viewer_camera
+
+        if temporary_scene is None:
+            temporary_scene = TemporaryDirectory(prefix="g1-viewer-")
+        viewer_scene = Path(temporary_scene.name) / "viewer_scene.xml"
+        ego_camera = None
+        if depth_camera:
+            ego_camera = (depth_camera["rgb"].get("scene_camera", "rgb_camera") if depth_camera.get("rgb")
+                          else depth_camera.get("scene_camera", "depth_camera"))
+        ego_camera = add_viewer_cameras(scene, viewer_scene, ego_camera)
 
         config.ROBOT = "g1"
-        config.ROBOT_SCENE = str(scene)
+        config.ROBOT_SCENE = str(viewer_scene)
         config.PHYSICS_BACKEND = "mujoco"
         config.DOMAIN_ID, config.INTERFACE = args.domain, "lo"
         config.USE_JOYSTICK = 0
@@ -176,9 +186,7 @@ def main():
                     webbrowser.open(data_web_url)
                 except Exception:
                     pass  # Headless environments keep the printed link only.
-            if args.follow:
-                from viewer_camera import follow_robot
-                extensions.enter_context(follow_robot())
+            extensions.enter_context(viewer_camera(args.follow, ego_camera))
             if args.depth_preview:
                 from viewer_depth_overlay import install_depth_overlay
                 extensions.enter_context(install_depth_overlay(fov_debug=args.fov_debug, native=native_camera))

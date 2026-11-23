@@ -37,6 +37,8 @@ python3 apps/simulation/sim.py --domain 1
 - `--fov-debug`：显示深度相机的四条视野边缘射线，需启用预览。
 - `--window-backend auto|x11|wayland`：默认 `x11`，`auto` 优先使用现有设置或有 `DISPLAY` 时的 X11。
 
+按手柄的 `Select`（Xbox 的 Back/View 键），或在 MuJoCo 窗口按 `V`，可循环切换跟随视角、机身后方视角和第一人称视角。默认从自由视角开始，首次切换进入跟随。场景进程独立读取视角键，因此只启动场景也可使用。`door` 的第一人称使用档案中的 RGB 相机。切换只影响 MuJoCo 主窗口。
+
 ## 地形
 
 | 参数 | 场景 |
