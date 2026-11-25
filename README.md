@@ -29,6 +29,7 @@
 - [硬件控制与验证边界](docs/HARDWARE.md)
 - [Parkour 与 RealSense 详细说明](docs/PARKOUR.md)
 - [网页监控部署](docs/WEB.md)
+- [远端观测与目标跟随（仿真 / 实机空跑）](docs/REMOTE_CONTROL.md)
 - [ARM64 机器人一键配置](docs/ROBOT_SETUP.md)
 - [模型与资产来源](ORIGIN.md)
 - [历史修改与验证记录](CHANGELOG.md)

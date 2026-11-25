@@ -23,6 +23,7 @@
 #include <yaml-cpp/yaml.h>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include "g1_hardware.h"
 #include "g1_motor_channel.h"
 #include "g1_async_log.h"
@@ -47,6 +48,11 @@ struct ResetConfig {
     std::array<float, kJointCount> kd{};
 };
 
+struct RemoteConfig {
+    std::array<float, kJointCount> lower{}, upper{};
+    std::array<std::optional<float>, kJointCount> fixed{};
+};
+
 ResetConfig LoadConfig(const std::string& path) {
     const auto root = YAML::LoadFile(path);
     ResetConfig config;
@@ -69,19 +75,23 @@ ResetConfig LoadConfig(const std::string& path) {
 class DwaqController {
 public:
     explicit DwaqController(const ResetConfig& config, const g1_hardware::Limits* hardware, bool read_only, bool unitree_remote
-        , g1_policy::Policy* policy, g1_gamepad::Device* gamepad
+        , g1_policy::Policy* policy, g1_gamepad::Device* gamepad, const g1_dwaq_app::Options& options,
+          const RemoteConfig& remote_config
     ) : config_(config), hardware_(hardware), read_only_(read_only), unitree_remote_(unitree_remote),
         keys_{unitree_remote ? g1_keys::Input::UnitreeRemote :
               gamepad ? g1_keys::Input::UsbGamepad : g1_keys::Input::Keyboard,
-              g1_keys::Motion::Holonomic}, state_receiver_("rt/lowstate") {
+              g1_keys::Motion::Holonomic}, remote_config_(remote_config), state_receiver_("rt/lowstate") {
         policy_ = policy;
         gamepad_ = gamepad;
+        if (!options.remote_socket.empty())
+            remote_input_ = std::make_unique<g1_dwaq_app::RemoteInput>(
+                options.remote_socket, options.remote_mode, remote_config_.lower, remote_config_.upper);
         if (!read_only_) {
             // On hardware, no actuator writer exists until the explicit 9/Start handover.
             if (!hardware_) InitMotorPublisher();
             telemetry_.Start();
         }
-        if (hardware_ && !read_only_) {
+        if (hardware_ && !read_only_ && !remote_input_) {
             command_monitor_ = std::make_unique<g1_control::CommandMonitor>();
         }
         state_receiver_.Start([this](const LowState_& state) { ValidateState(state); },
@@ -153,10 +163,15 @@ private:
             [&](const PolicyObservation& input,const auto& velocity) {return policy_->Step(input.state,velocity);},
             [&] {policy_->Reset();},false,
             std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(policy_->dt)));
-        log.Line() << "Reset and wait " << reset_seconds << " s before running the policy. "
-                      "Enabling output clears the preview and requires another reset.\n"
-                   << keys_.AvailableKeys("startup", g1_keys::Action::Handover, g1_keys::Action::Reset,
-                                          g1_keys::Action::Stop);
+        log.Line() << "Reset and wait " << reset_seconds << " s before running the policy.\n";
+        if (hardware_ && remote_input_) {
+            log.Line() << "Remote control on hardware: dry-run only; actuator handover is blocked.\n"
+                       << keys_.AvailableKeys("startup", g1_keys::Action::Reset, g1_keys::Action::Stop);
+        } else {
+            log.Line() << "Enabling output clears the preview and requires another reset.\n"
+                       << keys_.AvailableKeys("startup", g1_keys::Action::Handover, g1_keys::Action::Reset,
+                                              g1_keys::Action::Stop);
+        }
     }
 
     bool ReadState() {
@@ -204,6 +219,13 @@ private:
     }
 
     void TakeOver() {
+        if (remote_input_) {
+            remote_input_->Lock();
+            if (hardware_) {
+                log.Line() << "Actuator handover refused: remote hardware mode is dry-run only.\n";
+                return;
+            }
+        }
         if (unitree_remote_ && !g1_control::InputReady(control_input)) {
             log.Line() << "Center the Unitree remote sticks before enabling output.\n";
         } else {
@@ -237,6 +259,7 @@ private:
     }
 
     void BeginReset() {
+        if (remote_input_) remote_input_->Lock();
         policy_active = false;
         velocity.fill(0);
         if (policy_worker) policy_worker->Pause();
@@ -249,44 +272,73 @@ private:
     }
 
     void TryStartPolicy() {
-        const bool pose_ready = g1_control::NearPose(g1_control::JointPositions(state), policy_->DefaultDds());
+        const auto& default_pose = policy_ ? policy_->DefaultDds() : config_.default_pos;
+        const bool pose_ready = g1_control::NearPose(g1_control::JointPositions(state), default_pose);
         if (!active || !holding || (output_enabled && !pose_ready)) {
             log.Line() << "Wait for reset to finish before running the policy. "
                           "Enabled output also requires the measured pose to be near the training pose.\n";
         } else if(!g1_control::InputReady(control_input)) {
             log.Line()<<(unitree_remote_ ? "Center sticks before A/policy entry.\n" : (control_input->HoldRequired() ? "Center sticks and release RB before policy entry.\n" : "Center sticks before policy entry.\n"));
         } else {
-            policy_target=policy_->DefaultDds();
-            policy_worker->Begin(hardware_ && output_enabled);
+            policy_target = default_pose;
+            if (policy_worker) policy_worker->Begin(hardware_ && output_enabled);
             velocity.fill(0);
             policy_active = true;
             if(control_input) control_input->BeginPolicy();
-            log.Line() << (output_enabled ? "REAL" : "DRY RUN") << " locomotion policy ON; velocity = [0, 0, 0].\n"
-                       << keys_.AvailableKeys("policy", g1_keys::Action::Move, g1_keys::Action::Turn,
-                                              g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
-                                              g1_keys::Action::Stop);
+            log.Line() << (output_enabled ? "REAL" : "DRY RUN")
+                       << (policy_ ? " locomotion policy ON; velocity = [0, 0, 0].\n" : " joint reference mode ready.\n");
+            if (remote_input_)
+                log.Line() << "Press G locally to accept remote targets. X on keyboard / Y on remote locks it.\n";
+            else
+                log.Line() << keys_.AvailableKeys("policy", g1_keys::Action::Move, g1_keys::Action::Turn,
+                                                  g1_keys::Action::ZeroVelocity, g1_keys::Action::Reset,
+                                                  g1_keys::Action::Stop);
         }
     }
 
     void UpdatePolicy(char key) {
-        if (policy_active) {
-            bool changed = true;
-            switch (key) {
-                case 'w': case 'W': velocity[0] += 0.1f; break;
-                case 's': case 'S': velocity[0] -= 0.1f; break;
-                case 'a': case 'A': velocity[1] += 0.1f; break;
-                case 'd': case 'D': velocity[1] -= 0.1f; break;
-                case 'q': case 'Q': velocity[2] += 0.1f; break;
-                case 'e': case 'E': velocity[2] -= 0.1f; break;
-                case 'x': case 'X': velocity.fill(0); break;
-                default: changed = false;
+        const auto previous_remote = velocity;
+        if (remote_input_) {
+            const bool stop_target = key == 'x' || key == 'X';
+            if (stop_target) {
+                remote_input_->Lock();
+                log.Line() << "Remote input locked locally. Press G to rearm.\n";
             }
-            const auto previous_velocity = velocity;
-            if(control_input) velocity=policy_->GamepadVelocity(control_input->ControlVelocity(key));
-            policy_->ClampVelocity(velocity);
-            if (changed || (control_input && velocity != previous_velocity && (Clock::now() >= next_input_log_ || velocity == std::array<float,3>{0,0,0}))) {
-                log.Line() << "Velocity: " << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << '\n';
-                next_input_log_ = Clock::now() + std::chrono::milliseconds(200);
+            if (policy_active && (key == 'g' || key == 'G') && remote_input_->Arm())
+                log.Line() << "Remote target input armed locally; waiting for a fresh observation.\n";
+            const char* fault = nullptr;
+            remote_target_ = remote_input_->Poll(fault);
+            velocity = remote_target_ ? remote_target_->velocity : std::array<float, 3>{};
+            if (fault) log.Line() << "Remote input locked: " << fault << ". Press G to rearm.\n";
+            if (!policy_ && policy_active) {
+                if (fault || stop_target) policy_target = g1_control::JointPositions(state);
+                if (remote_target_) policy_target = remote_target_->position;
+            }
+            if (velocity != previous_remote)
+                log.Line() << "Remote velocity: " << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << '\n';
+        }
+        if (policy_active && policy_) {
+            if (!remote_input_) {
+                bool changed = true;
+                switch (key) {
+                    case 'w': case 'W': velocity[0] += 0.1f; break;
+                    case 's': case 'S': velocity[0] -= 0.1f; break;
+                    case 'a': case 'A': velocity[1] += 0.1f; break;
+                    case 'd': case 'D': velocity[1] -= 0.1f; break;
+                    case 'q': case 'Q': velocity[2] += 0.1f; break;
+                    case 'e': case 'E': velocity[2] -= 0.1f; break;
+                    case 'x': case 'X': velocity.fill(0); break;
+                    default: changed = false;
+                }
+                const auto previous_velocity = velocity;
+                if(control_input) velocity=policy_->GamepadVelocity(control_input->ControlVelocity(key));
+                policy_->ClampVelocity(velocity);
+                if (changed || (control_input && velocity != previous_velocity && (Clock::now() >= next_input_log_ || velocity == std::array<float,3>{0,0,0}))) {
+                    log.Line() << "Velocity: " << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << '\n';
+                    next_input_log_ = Clock::now() + std::chrono::milliseconds(200);
+                }
+            } else {
+                policy_->ClampVelocity(velocity);
             }
             PolicyObservation input;
             for (std::size_t i = 0; i < kJointCount; ++i) {
@@ -315,10 +367,23 @@ private:
         }
         const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();
         const double u = g1_control::ResetProgress(elapsed, reset_seconds);
-        const auto positions = policy_active ? policy_target :
+        auto positions = policy_active ? policy_target :
             g1_control::InterpolateResetPose(start_angles, config_.default_pos, u);
+        if (policy_active && remote_input_) {
+            for (std::size_t joint = 0; joint < positions.size(); ++joint) {
+                if (remote_target_ && remote_config_.fixed[joint])
+                    positions[joint] = *remote_config_.fixed[joint];
+                positions[joint] = std::clamp(positions[joint], remote_config_.lower[joint], remote_config_.upper[joint]);
+            }
+        }
         g1_control::SetPositionTargets(command, positions,
-            policy_active ? policy_->kp : config_.kp, policy_active ? policy_->kd : config_.kd);
+            policy_active && policy_ ? policy_->kp : config_.kp,
+            policy_active && policy_ ? policy_->kd : config_.kd);
+        if (!policy_ && policy_active && remote_target_) {
+            for (std::size_t joint = 0; joint < positions.size(); ++joint)
+                if (!remote_config_.fixed[joint])
+                    command.motor_cmd()[joint].dq() = remote_target_->joint_velocity[joint];
+        }
         if (hardware_ && output_enabled) {
             if (!Snapshot(state)) throw std::runtime_error("Hardware state invalid before command publication: " + state_receiver_.Error());
             hardware_->PrepareCommand(command);
@@ -370,12 +435,14 @@ private:
         hardware_->CheckState(state, unitree_remote_ ? 1u << 3 : 1u << 8);
     }
     void InitMotorPublisher() {
+        if (hardware_ && remote_input_)
+            throw std::logic_error("Remote hardware mode forbids a motor publisher");
         if (publisher_) return;
         publisher_ = std::make_unique<g1_control::MotorPublisher>("rt/lowcmd");
         publisher_->InitChannel();
     }
     bool WriteMotor(const LowCmd_& command) {
-        if (!publisher_ || (hardware_ && !output_armed_))
+        if (!publisher_ || (hardware_ && (!output_armed_ || remote_input_)))
             throw std::runtime_error("Actuator publication requires explicit 9/Start handover");
         return publisher_->Write(command);
     }
@@ -404,6 +471,9 @@ private:
     std::atomic<bool> output_armed_{false};
     std::unique_ptr<g1_control::CommandMonitor> command_monitor_;
     std::unique_ptr<g1_control::MotorPublisher> publisher_;
+    const RemoteConfig remote_config_;
+    std::unique_ptr<g1_dwaq_app::RemoteInput> remote_input_;
+    const g1_dwaq_app::RemoteTarget* remote_target_ = nullptr;
     g1_control::MonitorPublisher telemetry_;
     g1_control::DdsStateCache<LowState_> state_receiver_;
     // Session data belongs to the controller; DDS callbacks only touch the state cache.
@@ -466,21 +536,36 @@ int RunControlSession(const Options& options) {
     const auto config = LoadConfig(options.config);
     std::cout << "Loaded locomotion configuration: " << options.config << '\n';
     std::unique_ptr<g1_policy::Policy> policy;
-    if (!read_only) {
+    if (!read_only && options.remote_mode != RemoteMode::Joints) {
         policy = std::make_unique<g1_policy::Policy>(options.config);
         std::cout << "Loaded locomotion policy, period " << policy->dt << " s\n";
     }
     std::unique_ptr<g1_hardware::Limits> hardware_limits;
-    if (options.hardware) {
+    RemoteConfig remote_config;
+    if (options.hardware || !options.remote_socket.empty()) {
         hardware_limits = std::make_unique<g1_hardware::Limits>(YAML::LoadFile(options.config));
         for (int i = 0; i < 29; ++i)
             if (config.default_pos[i] < hardware_limits->lower[i] + 0.01f ||
                 config.default_pos[i] > hardware_limits->upper[i] - 0.01f)
                 throw std::runtime_error("Reset pose outside hardware joint limits");
+        remote_config.lower = hardware_limits->lower;
+        remote_config.upper = hardware_limits->upper;
+    }
+    if (!options.fixed_joints.empty()) {
+        const auto fixed = YAML::LoadFile(options.fixed_joints);
+        if (!fixed.IsMap()) throw std::invalid_argument("Fixed joints must map DDS indices to positions in radians");
+        for (const auto& entry : fixed) {
+            const auto joint = entry.first.as<int>();
+            const auto angle = entry.second.as<float>();
+            if (joint < 0 || joint >= 29 || !std::isfinite(angle) || remote_config.fixed[joint] ||
+                angle < remote_config.lower[joint] || angle > remote_config.upper[joint])
+                throw std::invalid_argument("Invalid fixed joint index or position");
+            remote_config.fixed[joint] = angle;
+        }
     }
     unitree::robot::ChannelFactory::Instance()->Init(options.domain, options.interface);
-    DwaqController controller(config, hardware_limits.get(), read_only, options.hardware && !read_only,
-                          policy.get(), gamepad.get());
+    DwaqController controller(config, options.hardware ? hardware_limits.get() : nullptr, read_only,
+                          options.hardware && !read_only, policy.get(), gamepad.get(), options, remote_config);
     return controller.Run(config.reset_seconds);
 }
 }  // namespace

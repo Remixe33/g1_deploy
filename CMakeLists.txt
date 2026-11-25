@@ -138,6 +138,8 @@ install(PROGRAMS "${REPOSITORY_ROOT}/g1" DESTINATION .)
 install(FILES .g1-onboard.conf.example DESTINATION .)
 install(FILES scripts/onboard_config.sh DESTINATION scripts)
 install(FILES apps/web_addresses.py DESTINATION apps)
+install(FILES apps/remote_control/bridge.py apps/remote_control/client.py
+    apps/remote_control/protocol.py DESTINATION apps/remote_control)
 install(PROGRAMS "${REPOSITORY_ROOT}/apps/monitor/monitor.sh" DESTINATION . RENAME monitor)
 install(FILES apps/monitor/joint_monitor.py apps/monitor/robot_data_web.py
     apps/monitor/camera_sources.py apps/monitor/recorder.py apps/monitor/requirements.txt
@@ -148,6 +150,7 @@ install(FILES "${REPOSITORY_ROOT}/README.md" "${REPOSITORY_ROOT}/ORIGIN.md" "${R
 install(FILES "${REPOSITORY_ROOT}/docs/HARDWARE.md" DESTINATION docs)
 install(FILES "${REPOSITORY_ROOT}/docs/WEB.md" DESTINATION docs)
 install(FILES "${REPOSITORY_ROOT}/docs/ROBOT_SETUP.md" DESTINATION docs)
+install(FILES docs/REMOTE_CONTROL.md DESTINATION docs)
 install(FILES "${REPOSITORY_ROOT}/LICENSE" DESTINATION licenses/project)
 configure_file("${REPOSITORY_ROOT}/cmake/BUILD_INFO.in" "${CMAKE_CURRENT_BINARY_DIR}/BUILD_INFO.txt" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/BUILD_INFO.txt" DESTINATION .)

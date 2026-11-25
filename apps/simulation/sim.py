@@ -8,10 +8,12 @@ third_party/unitree_mujoco (source: wangsy1999/unitree_mujoco fork, see ORIGIN.m
 import argparse
 from contextlib import ExitStack
 import json
+import math
 import os
 from pathlib import Path
 import runpy
 import sys
+import time
 from tempfile import TemporaryDirectory
 
 
@@ -53,6 +55,9 @@ def main():
     parser.add_argument("--data-web-port", type=int, default=8765)
     parser.add_argument("--record", action="store_true",
                         help="Start data-web recording immediately (requires the data web)")
+    parser.add_argument("--remote-socket", help="Enable remote observations with this absolute Unix target path")
+    parser.add_argument("--remote-port", type=int, default=8770)
+    parser.add_argument("--remote-control", choices=("velocity", "joints"), default="velocity")
     args = parser.parse_args()
     profile = None
     if args.profile:
@@ -88,6 +93,9 @@ def main():
     args.terrain = args.terrain or profile_terrain or "original"
     if args.depth_preview is None:
         args.depth_preview = bool(profile and profile.get("camera", {}).get("config"))
+    if args.remote_socket and (not Path(args.remote_socket).is_absolute() or not args.depth or
+                               not args.depth_preview or not native_camera or not 1 <= args.remote_port <= 65535):
+        parser.error("--remote-socket requires an absolute path, native depth preview and a TCP port in 1..65535")
     if args.domain <= 0:
         parser.error("Use a positive simulation domain")
     if args.depth_preview and not args.depth:
@@ -166,10 +174,29 @@ def main():
               + f", window backend {window_backend}", flush=True)
         sys.argv = [str(simulator)]
         with ExitStack() as extensions:
+            bridge = None
+            if args.remote_socket:
+                sys.path.insert(0, str(PROJECT_ROOT / "apps" / "remote_control"))
+                from bridge import ObservationBridge
+
+                video_stream = depth_camera.get("simulation_stream", {"width": 640, "height": 480})
+                width, height = video_stream["width"], video_stream["height"]
+                focal = height / (2 * math.tan(math.radians(depth_camera["vertical_fov_deg"]) / 2))
+                intrinsics = {"fx": focal, "fy": focal, "ppx": width / 2, "ppy": height / 2}
+                bridge = ObservationBridge(args.remote_port, args.remote_socket, args.remote_control)
+                extensions.callback(bridge.close)
+                bridge.start(args.domain, "lo")
+
+            def deposit_frame(frame):
+                if bridge is not None:
+                    bridge.deposit(frame.raw, time.monotonic_ns(), intrinsics)
+                if data_web_source is not None:
+                    data_web_source.deposit(frame)
+
             extensions.enter_context(install_observation_bridge(
                 config, args.depth, args.depth_preview, native_camera,
                 profile.get("camera", {}).get("config") if profile else None, head_back,
-                frame_sink=data_web_source.deposit if data_web_source is not None else None))
+                frame_sink=deposit_frame if bridge is not None or data_web_source is not None else None))
             if data_web_source is not None:
                 from joint_monitor import JointMonitor
                 data_web = JointMonitor(host="127.0.0.1", port=args.data_web_port, rate_hz=50,

@@ -19,6 +19,17 @@ Options ParseOptions(int argc, char** argv) {
             g1_control::SelectMode(true, options, state);
             options.mode = Mode::ReadOnly;
         } else if (argument == "--joystick") options.joystick = value();
+        else if (argument == "--remote-socket") {
+            options.remote_socket = value();
+            if (options.remote_socket.empty() || options.remote_socket.front() != '/')
+                throw std::invalid_argument("--remote-socket requires an absolute path");
+        }
+        else if (argument == "--remote-control") {
+            const auto mode = value();
+            if (mode == "joints") options.remote_mode = RemoteMode::Joints;
+            else if (mode != "velocity") throw std::invalid_argument("--remote-control expects velocity or joints");
+        }
+        else if (argument == "--fixed-joints") options.fixed_joints = value();
         else if (argument == "--check-joystick") check_joystick = true;
         else if (argument == "--check-policy") check_policy = true;
         else if (argument == "--help") {
@@ -33,6 +44,10 @@ Options ParseOptions(int argc, char** argv) {
     if ((check_joystick && check_policy) ||
         (options.mode == Mode::ReadOnly && (check_joystick || check_policy)))
         throw std::invalid_argument("Choose one diagnostic mode");
+    if (!options.remote_socket.empty() && (check_policy || check_joystick || options.mode == Mode::ReadOnly))
+        throw std::invalid_argument("--remote-socket requires a control session");
+    if (options.remote_socket.empty() && (options.remote_mode == RemoteMode::Joints || !options.fixed_joints.empty()))
+        throw std::invalid_argument("Remote joints and joint locks require --remote-socket");
     if (check_joystick) {
         if (state.connection_values)
             throw std::invalid_argument("Use --check-joystick [--joystick DEVICE] without DDS/config arguments");
@@ -50,6 +65,9 @@ void PrintUsage(const std::string& program) {
               << program << " --hardware --domain 0 --interface ROBOT_IF\n"
               << "Common: --config JSON (model path, reset_seconds and hardware limits are read from JSON)\n"
               << "Read-only: --hardware-read-only --domain 0 --interface ROBOT_IF\n";
+    std::cout << "Remote targets: --remote-socket ABSOLUTE_PATH [--remote-control velocity|joints] [--fixed-joints JSON]\n"
+              << "Press G locally after policy entry. Joints mode does not load ONNX.\n"
+              << "Remote hardware mode is dry-run only; X on the keyboard / Y on the remote locks remote targets.\n";
     std::cout << "Offline inference: --check-policy [--config JSON]\n"
               << "Input-only check: --check-joystick [--joystick DEVICE]\n"
               << "Simulation auto-detects one compatible USB gamepad; --joystick PATH overrides selection. No hotplug reconnect.\n"
