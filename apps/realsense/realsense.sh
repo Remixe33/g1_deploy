@@ -12,12 +12,15 @@ if [[ -d "$root_dir/.python-deps" ]]; then
 fi
 python="${PYTHON_BIN:-python3}"
 for dependency_root in "$root_dir/.deps" "$root_dir/../.deps"; do
-    if [[ -z "${PYTHON_BIN:-}" && -x "$dependency_root/python/bin/python3" ]]; then
-        python="$dependency_root/python/bin/python3"
-        if [[ -x "$dependency_root/python/bin/python3-realsense" ]]; then
-            python="$dependency_root/python/bin/python3-realsense"
+    if [[ -x "$dependency_root/python/bin/python3" ]]; then
+        if [[ -z "${PYTHON_BIN:-}" ]]; then
+            python="$dependency_root/python/bin/python3"
+            if [[ -x "$dependency_root/python/bin/python3-realsense" &&
+                  ! -f "$dependency_root/robot-bundle.sha256" ]]; then
+                python="$dependency_root/python/bin/python3-realsense"
+            fi
         fi
-        export LD_LIBRARY_PATH="$dependency_root/realsense/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="$dependency_root/realsense/lib:$dependency_root/runtime/python/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         break
     fi
 done

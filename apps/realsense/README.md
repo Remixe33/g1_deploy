@@ -23,13 +23,16 @@ cmake -S . -B build -DG1_REQUIRE_REALSENSE=ON \
 ## 独立网页预览
 
 ```bash
-bash apps/realsense/realsense.sh --host 0.0.0.0 --port 8766
-bash apps/realsense/realsense.sh --host 0.0.0.0 --port 8766 --color
-bash apps/realsense/realsense.sh --mock --host 127.0.0.1 --port 8766
+./g1 realsense --host 0.0.0.0
+./g1 realsense --host 0.0.0.0 --color
+./g1 realsense --mock
 ```
 
-浏览器打开 `http://机器人IP:8766/`。默认显示原始深度和 32×18 策略深度，`--color` 额外显示 RGB，`--mock` 只生成合成网页画面，不供策略使用。
+在可信网络中用 `--host 0.0.0.0` 启动后，从工控机打开日志中可达的 PC2 地址。G1 默认地址是 [http://192.168.123.164:8766/](http://192.168.123.164:8766/)，`0.0.0.0` 只是监听地址。不带 `--host` 时仅限机载电脑本机访问。
 
+默认显示原始深度和 32×18 策略深度，`--color` 额外显示 RGB，`--mock` 只生成合成网页画面，不供策略使用。
+
+- 在反馈机上，原厂图传占用了色彩节点，显式开启 RGB 还曾触发原生开流段错误。先用深度自检；只有在相机空闲时才分别测试仅 RGB 和双流，项目不会停止原厂图传。
 - Python 依赖见 `requirements.txt`，可用 `PYTHON_BIN` 指定解释器。
 - `--serial` 选择设备，`--width/--height/--fps` 选择深度模式。
 - `--camera-mode legacy` 保留旧处理方式。

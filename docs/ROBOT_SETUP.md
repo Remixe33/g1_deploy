@@ -1,81 +1,70 @@
-# 一键配置机器人（手动复制文件）
+# G1 新机部署
 
-适用当前 G1 开发电脑：Linux ARM64/aarch64，原依赖流程曾在 Ubuntu 20.04 验证；新增的原生相机需单独验证。不会自动 SSH/SCP/rsync，不启动运动控制，不改系统时间或系统 glibc。
+首版依赖包的目标是 Jetson aarch64、Ubuntu 20.04（反馈机为 20.04.6）和 glibc 2.31。系统自带的 Python 3 用于安装脚本；监控使用包内的 Python 3.10.15，不改系统 Python、glibc、JetPack 或内核。部署不启动控制器，也不发送运动指令。
 
-## 使用
+## 1. 解压源码，选择安装方式
 
-1. 手动把 `D:\g1_deploy` 复制到机器人，例如 `/home/unitree/g1_deploy`。同时复制 `.deploy-cache/robot-arm64/`，离线依赖约 100 MB；不要复制 Windows 的 `build/`、`install/` 或另一目录的 `.deps/`。
-2. 在机器人上执行：
+源码 ZIP **不含依赖**。使用同一次发布中的源码与依赖包。若 ZIP 已带顶层目录，在目标父目录执行 `unzip g1_deploy-door.zip`，不要再加同名解压目录。通过 SCP 传输时，目标使用实际绝对路径，如 `unitree@<PC2地址>:/home/unitree/`，不要依赖远端 `~` 展开。
 
-```bash
-cd ~/g1_deploy
-bash scripts/setup_robot.sh
-```
-
-有缺失的 Ubuntu 编译依赖时可使用下面的命令；只有确实缺少软件包时才调用 sudo/apt，需要网络和管理员密码：
+进入解压后的源码根目录，只选择一种方式：
 
 ```bash
-bash scripts/setup_robot.sh --install-system-deps
+# 在线：以源码内的清单为准，从发布地址下载固定版本的包
+bash scripts/setup_robot.sh --online --install-system-deps
+
+# 离线：把同版本依赖包传到机器人，不访问软件源或 PyPI
+bash scripts/setup_robot.sh --offline /home/unitree/robot-deps-focal-arm64-v1.tar.gz --install-system-deps
 ```
 
-额外验证 C++ 原生相机出图（只读，不启动控制程序）：
+`--install-system-deps` 授权在缺少系统软件包时通过 `sudo` 安装包内的本地 `.deb`；不传此选项则只列出缺失的包。安装器拒绝会移除软件包或修改系统 glibc、内核、JetPack 的安装方案。在线下载需要 PC2 能访问发布地址并具备有效的系统 HTTPS 证书；离线可在另一台机器下载后传入。
 
-```bash
-bash scripts/setup_robot.sh --verify-camera
-```
+两条路径在解包前检查发布清单中的 SHA-256，随后检查包内文件清单和版本。校验失败时重新获取匹配的安装包，不要手动改校验值。源码开发版若显示没有发布校验值，表示对应的依赖包尚未出包，不是机器人缺库。无参数只读取本地 `.deploy-cache/robot-arm64`，不会自动联网；也可以用 `--cache DIR` 指定已解包的缓存。
 
-仅配置依赖，不编译控制程序：
+只装依赖可在上述命令后加 `--deps-only`；依赖已准备好时，用 `bash scripts/setup_robot.sh --build-only` 重新构建并安装，无需缓存或联网。安装到 `install/` 后会检查 DWaQ、Parkour 和 Hybrid 离线推理，日志与 Python 包清单位于 `.deps/setup-logs/`。
 
-```bash
-bash scripts/setup_robot.sh --deps-only
-```
-
-安装后，在 PC2 的部署根目录（例如 `~/g1_deploy`）配置一次机内 DDS 网卡：
+## 2. 首次配置与只读自检
 
 ```bash
 cp -n .g1-onboard.conf.example .g1-onboard.conf
 ./g1 interfaces
 ```
 
-编辑 `.g1-onboard.conf`，取消 `ROBOT_INTERFACE` 这一行的注释，并填入通往 PC1 的实际网卡名。工控机访问网页使用 PC2 的 Wi-Fi 地址。从源码目录和其下的 `install/` 启动时，共用这一份本机配置。独立解压的安装包在自身根目录配置。
-
-随后在两个 SSH 终端中分别运行：
+在 `.g1-onboard.conf` 里取消 `ROBOT_INTERFACE` 的注释并填入 PC2 通往 PC1 的实际网卡。从源码或其下的 `install/` 启动会共用这份配置。使用显式网卡也可以启动只读检查或监控：
 
 ```bash
-./g1 task door real            # 终端一，启动 DWaQ，初始为空跑
-./g1 monitor                   # 终端二，关节、IMU、D435 RGB-D 和录制
+./install/g1 dwaq check
+./install/g1 read-only eth0    # 用实际 DDS 网卡替换 eth0
+./install/bin/g1_camera_check # 验证 C++ 深度，先退出其它相机采集程序
+./install/g1 monitor
 ```
 
-浏览器打开 `http://<PC2的Wi-Fi-IP>:8765/`。监控服务可单独运行，通过网页按钮开始或停止录制，数据保存到本机配置所在目录的 `logs/recordings/`。可在配置中用 `MONITOR_HOST`、`MONITOR_PORT` 调整默认的 `0.0.0.0:8765`。
+监控默认显示关节、IMU 和 D435 深度（480×270、60 Hz），只监听 PC2 的 `127.0.0.1:8765`。工控机可用 [SSH 端口转发](WEB.md#从工控机访问) 访问；可信网络中也可显式传入 `--host 0.0.0.0`，再打开日志中可达的 PC2 地址。已有配置中的 `MONITOR_HOST`、`MONITOR_PORT` 仍然生效，如需恢复仅本机访问，请移除原有的 `MONITOR_HOST` 或改为 `127.0.0.1`。录制保存在 `logs/recordings/`。
 
-`./g1 task parkour real` 和 `./g1 task hybrid real` 会在策略进程内打开 D435。运行期间用 `./g1 monitor --joints-only` 查看机器人状态。需要独立 RGB-D 预览或录制时，先退出占用相机的策略。
+`./g1 monitor --interface eth0 --joints-only` 不开相机，适用于 Parkour 或 Hybrid 已占用 D435 的场景。需要验证 RGB-D 时，在相机空闲且有操作者确认的条件下显式传入 `--camera-config profiles/configs/cameras/d435_rgbd.json`（路径相对于当前终端目录）。有一台反馈机的原厂图传占用了色彩节点，另有 RGB 开流段错误尚未定位；部署器既不停止图传，也不会自动重试 RGB。无相机时可先用 `--joints-only` 验证网页和 DDS。更多细节见 [网页监控](WEB.md) 和 [RealSense 说明](../apps/realsense/README.md)。
 
-原配遥控器按键与仿真 USB 手柄一致：Start 启用输出、X 复位、A 进入策略、Y 清零速度、B 停止退出。实机也可按 Select 停止。
-空跑用 X → 等待复位完成 → A。真实控制需要现场保护，Start → X → 等待复位完成 → 摇杆回中 → A。
-配置已将左右 hip yaw 限制为 ±90°，其它关节保持原配置。
+## 发布依赖包
 
-## 原生相机依赖
+在与目标一致的干净 ARM64/Focal 用户空间上制作。先在未安装项目软件包的目标镜像上配置与原厂镜像匹配的 APT 源，更新索引，再运行 `bash scripts/package_robot_deps.sh collect-debs /path/to/inputs/deb`。它按 [系统包清单](../scripts/robot-system-packages.txt) 解析并下载缺失包和传递依赖。如果解析要求升级系统 glibc、内核或 JetPack，先校正构建镜像与 APT 源，不绕过检查。
 
-机器人构建强制要求 `librealsense2` C++ 开发库，配置脚本设置 `G1_REQUIRE_REALSENSE=ON`。SDK 可安装到系统，或放在 `.deps/realsense` 并包含 CMake 配置、头文件及本机 ABI 兼容的库。旧离线缓存中的 `pyrealsense2` wheel 和私有 glibc 仅服务于独立 Python 预览，不满足 C++ 依赖；离线迁移须额外准备原生 SDK。`--install-system-deps` 会尝试安装 `librealsense2-dev`，目标软件源须提供该包。
+在构建环境准备以下 `inputs/`，每个 SDK 目录是从官方源码或兼容发行包重新准备的安装前缀，不从旧机器的 `.deps` 复制。打包脚本会在这个系统上检查动态库，并用临时 venv 验证完整 wheel 集可离线安装和导入：
 
-实机启动 `./g1 parkour real eth0` 或 `./g1 hybrid real eth0` 即可，先关闭任何占用相机的独立预览。只读相机诊断使用 `./bin/g1_camera_check`，不需要网页端口或 Python 相机服务。
+- `runtime/python/`：CPython 3.10.15（启用 `--enable-shared --with-ensurepip=install`，验证 `ssl` 与 `venv`）。
+- `unitree-sdk2/`、`cyclonedds/`、`onnxruntime/`：分别安装 G1 兼容的 [Unitree SDK2](https://github.com/unitreerobotics/unitree_sdk2)、[CycloneDDS 0.10.2](https://github.com/eclipse-cyclonedds/cyclonedds/tree/0.10.2) 和 CPU 版 [ONNX Runtime 1.18.1](https://github.com/microsoft/onnxruntime/tree/v1.18.1)。安装库到 `lib/`，同时保留头文件、CMake 配置、SONAME 软链和上游许可证；如果预编译库要求高于 glibc 2.31 的符号，须在目标用户空间从对应源码重建。
+- `realsense/` 与 `wheels/pyrealsense2-*.whl`：从 [librealsense v2.55.1](https://github.com/realsenseai/librealsense/tree/v2.55.1) 构建。在构建机装好 CMake、libusb/udev 开发头文件和 Python 的 `wheel` 后，执行 `bash scripts/build_robot_realsense.sh /path/to/librealsense /path/to/build-venv/bin/python /path/to/inputs`。构建脚本验证原生 SDK 与 Python 绑定能否在普通 Python 中导入，不启用私有 glibc。
+- `wheels/`：使用相同的 Python 3.10，在目标架构上准备 NumPy 1.26.4、OpenCV 4.11.0.86（`opencv-python`）、CycloneDDS 0.10.2、`unitree_sdk2py` 1.0.1 及所有传递依赖的 wheel。CycloneDDS 如需从源码构建，设置 `CYCLONEDDS_HOME` 指向上述原生库；用 `pip wheel` 构建 SDK wheel，用 `pip download --only-binary=:all:` 收集其余依赖。每个发行包只放一个兼容版本，安装器不在线编译或解析下载。
+- `SOURCES.txt`：记录镜像和 APT 来源、SDK 的发行版或 Git 提交、wheel 版本与来源、构建选项及许可证；不要分发未获再分发许可的组件。
 
-## 配置内容
+```bash
+bash scripts/package_robot_deps.sh pack /path/to/inputs /path/to/output \
+  'https://<发布主机>/<固定版本路径>/robot-deps-focal-arm64-v1.tar.gz'
+```
 
-- 项目 `.deps/runtime`：Python 3.10.15；`.deps/python`：独立虚拟环境。
-- NumPy 1.26.4、CycloneDDS Python 0.10.2、宇树 Python SDK、OpenCV headless 4.11.0.86、RealSense Python 2.55.1.6486。
-- `.deps/unitree-sdk2`、`.deps/cyclonedds`、`.deps/onnxruntime`：已在此机器人验证的 ARM64 原生库；构建不再依赖其它项目目录。
-- `.deps/glibc-2.35`：Ubuntu 官方 ARM64 glibc 2.35。只有相机专用 Python 入口通过它的动态加载器启动；不修改 `/lib`、`/usr/lib`、系统加载器或全局环境变量。
-- `apps/realsense/python3-realsense.sh`：相机专用入口模板，由配置脚本复制到 `.deps/python/bin/python3-realsense`。RGB-D 监控和独立网页预览可使用这个入口。纯关节监控和控制程序沿用各自的常规运行库。
-- 编译 Release、安装到 `install/`，并完成两套模型的离线推理检查。已有安装会备份到 `deployment-backups/`，发现本项目控制程序正在运行则停止配置，需先由操作者退出程序。
-- 日志及包清单位于 `.deps/setup-logs/`。
+将生成的 `robot-deps-release.json` 随匹配的源码放到 `scripts/`，依赖包作为单独的发布附件。不要提交本机的 `.deps/`、缓存、`build/` 或 `install/`。更换依赖包内容时更新版本，不覆盖已发布的对象。
 
-## 离线缓存与迁移
+发布前用两份全新的目标环境分别运行在线和断网安装，检查 Python 导入和三套策略离线推理，再标记可用。发布清单的下载地址和校验值目前未填写：仓库提供打包及安装流程，但尚未生成、托管或在目标系统验收实际发布包。接上 G1 后独立检查 DDS 只读、深度出帧、远端网页和 RGB，不把离线检查当作硬件验收。
 
-`.deploy-cache/robot-arm64/` 当前已在本地准备齐全，包含 Python、SDK 和运行库归档、Python wheels、glibc deb，以及 SHA256SUMS。配置脚本先校验完整性，再离线安装。可用 `--cache /path/to/robot-arm64` 指定其它位置。
+## 旧机迁移（可选）
 
-缓存来自官方发行包及当前机器人已验证的原生库。该缓存仅适用于 ARM64，基础系统需有兼容的 C++/OpenCV/yaml-cpp/Boost 依赖；其它架构需另备依赖包。
+优先解到新目录。旧布局的本地缓存可用于原有部署，不是新机依赖包；不要搬旧 venv，不要混用新旧 `.deps`。覆盖当前 `install/` 前，安装器会比较将被替换的任务档案和策略配置，并在发现差异时停止。先核对并合并需要保留的配置，尤其是策略配置中实际生效的左右髋 yaw 限位；备份并移开旧安装后再部署。还在运行的本项目控制器应由操作者先退出。
 
-`.deps/`、`.deploy-cache/`、`build-sdk/` 和安装/构建目录已加入 Git 忽略。Git 保存配置流程和启动脚本，不保存平台二进制及本机虚拟环境。若使用 Git 将源码带到另一台机器，需要另外手动复制缓存；仅复制源码不足以离线配置。不得把旧目录的虚拟环境整体移动后直接使用，应在目标目录重新运行配置脚本。
-
-此脚本不设置开机自启，也不执行电机接管。Parkour 和 Hybrid 默认使用 480×270、60 Hz 深度。独立 RGB-D 监控默认使用 640×480、30 Hz。实际采集频率由页面和日志统计。
+如果 SSH 登录被机载系统的 ROS 选择提示卡住，让镜像维护者把交互选择限制在交互式 shell，不要让 `.bashrc` 在非交互连接中执行 `read`。如果 RGB 开流崩溃，先恢复默认深度配置；重现时记录设备节点占用、所选流配置和 `PYTHONFAULTHANDLER=1` 的输出。旧私有加载器是 shell 脚本，调试原生栈应让调试器运行加载器或 Python 的实际可执行文件。

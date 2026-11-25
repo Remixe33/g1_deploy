@@ -15,7 +15,8 @@ Usage:
   ./g1 task NAME sim policy [options]      Start the task's simulation controller
   ./g1 task NAME real [options]            Start the task's hardware controller
   ./g1 dwaq real                           Start DWaQ using the configured robot interface
-  ./g1 monitor [--joints-only]             Monitor G1 and its D435 (or just robot state)
+  ./g1 monitor [--interface IFACE] [--joints-only]
+                                    Monitor G1 and D435 depth; see monitor --help
   ./g1 dwaq|parkour|hybrid check [options]   Offline ONNX inference, no DDS
   ./g1 dwaq|parkour|hybrid sim [options]     Simulation controller (start MuJoCo separately)
   ./g1 dwaq|parkour|hybrid real ROBOT_INTERFACE [options]
@@ -56,34 +57,10 @@ validate_robot_interface() {
 }
 
 load_onboard_config() {
-    onboard_dir="$package_dir"
-    if [[ "$package_dir" == */install && -f "$package_dir/../CMakeLists.txt" &&
-          -f "$package_dir/../g1" ]]; then
-        onboard_dir="$(cd -- "$package_dir/.." && pwd)"
-    fi
-    local file="$onboard_dir/.g1-onboard.conf" line
-    local assignment='^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*([^[:space:]#]+)[[:space:]]*(#.*)?$'
-    if [[ ! -f "$file" ]]; then
-        echo "Missing $file. Copy .g1-onboard.conf.example there and set ROBOT_INTERFACE." >&2
-        exit 2
-    fi
-    robot_interface=
-    monitor_host=0.0.0.0
-    monitor_port=8765
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
-        if [[ "$line" =~ $assignment ]]; then
-            case "${BASH_REMATCH[1]}" in
-                ROBOT_INTERFACE) robot_interface="${BASH_REMATCH[2]}"; continue ;;
-                MONITOR_HOST) monitor_host="${BASH_REMATCH[2]}"; continue ;;
-                MONITOR_PORT) monitor_port="${BASH_REMATCH[2]}"; continue ;;
-            esac
-        fi
-        echo "Invalid setting in $file: $line" >&2
-        exit 2
-    done < "$file"
+    source "$package_dir/scripts/onboard_config.sh"
+    read_onboard_config "$package_dir"
     if [[ -z "$robot_interface" ]]; then
-        echo "Set ROBOT_INTERFACE in $file." >&2
+        echo "Set ROBOT_INTERFACE in $onboard_file (see .g1-onboard.conf.example and ./g1 interfaces)." >&2
         exit 2
     fi
     validate_robot_interface "$robot_interface"
@@ -166,22 +143,6 @@ fi
 export LD_LIBRARY_PATH="$package_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export G1_PROFILES_DIR="$package_dir/profiles"
 if [[ "$mode" == monitor ]]; then
-    if [[ "${1:-}" == --help ]]; then usage; exit 0; fi
-    if (( $# == 0 )) || [[ "$1" == --joints-only ]]; then
-        (( $# <= 1 )) || { usage >&2; exit 2; }
-        load_onboard_config
-        if [[ ! "$monitor_port" =~ ^[0-9]{1,5}$ ]] ||
-           ((10#$monitor_port < 1 || 10#$monitor_port > 65535)); then
-            echo "Set MONITOR_PORT to a port from 1 to 65535 in $onboard_dir/.g1-onboard.conf." >&2
-            exit 2
-        fi
-        camera_args=()
-        if (( $# == 0 )); then
-            camera_args=(--source realsense --camera-config "$package_dir/profiles/configs/cameras/d435_rgbd.json")
-        fi
-        set -- "$robot_interface" "$monitor_host" "$monitor_port" \
-            --record-dir "$onboard_dir/logs/recordings" "${camera_args[@]}"
-    fi
     if [[ -x "$package_dir/monitor" ]]; then exec "$package_dir/monitor" "$@"; fi
     exec bash "$package_dir/apps/monitor/monitor.sh" "$@"
 fi

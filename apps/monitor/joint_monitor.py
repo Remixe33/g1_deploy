@@ -4,6 +4,7 @@ import math
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import sys
 import threading
 import time
 from urllib.parse import urlsplit
@@ -13,6 +14,9 @@ import numpy as np
 
 from camera_sources import MockSource, RealSenseSource, SimSource, load_camera_module
 from recorder import Recorder
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from web_addresses import print_web_addresses
 
 DEPTH_RANGE_M = 2.5  # 伪彩归一化区间，与录制一致
 
@@ -305,8 +309,7 @@ class JointMonitor:
         self.thread.start()
         if self.camera_thread is not None:
             self.camera_thread.start()
-        host, port = self.server.server_address[:2]
-        print(f"Data web: http://{host}:{port}", flush=True)
+        print_web_addresses("Data web", self.server.server_address)
 
     def start_subscribers(self, domain, interface, init_factory=True):
         """创建 DDS 订阅；init_factory=False 时由宿主进程先完成 ChannelFactoryInitialize。"""

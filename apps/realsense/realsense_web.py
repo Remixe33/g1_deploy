@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import secrets
 import struct
+import sys
 import threading
 import time
 from urllib.parse import urlsplit
@@ -19,6 +20,9 @@ import numpy as np
 
 HEADER = struct.Struct("<8sQdII")
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "apps"))
+from web_addresses import print_web_addresses
+
 CAPTURE_FREQUENCY_CHECK_INTERVAL = 500
 
 
@@ -401,9 +405,9 @@ def main():
         parser.error("Invalid size, FPS or HTTP port")
     frames, stopping = Frames(args.token), threading.Event()
     server = make_server(frames, args.host, args.port)
+    print_web_addresses("RealSense read-only web", server.server_address)
     worker = threading.Thread(target=capture, args=(args, frames, stopping), daemon=True)
     worker.start()
-    print(f"RealSense read-only web test: http://{args.host}:{args.port}/ (no robot commands)", flush=True)
     try:
         server.serve_forever(poll_interval=.2)
     except KeyboardInterrupt:

@@ -2,6 +2,7 @@
 # DDS interface that reaches PC1. Use ./g1 interfaces to find its name.
 # ROBOT_INTERFACE=eth0
 
-# Optional HTTP settings. Connect from the browser using PC2's Wi-Fi address.
-# MONITOR_HOST=0.0.0.0
+# Optional HTTP settings. The default is local-only; use SSH port forwarding
+# or explicitly bind to a reachable PC2 address for direct LAN access.
+# MONITOR_HOST=127.0.0.1
 # MONITOR_PORT=8765
