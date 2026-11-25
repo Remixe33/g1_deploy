@@ -18,7 +18,7 @@
 
 两条命令都从源码目录运行，可将 `door` 同时换成 `dwaq`、`parkour` 或 `hybrid`。场景入口依次选用 `PYTHON_BIN`、源码目录的 `.venv/bin/python` 或系统 `python3`。场景和策略分别接收各自的选项，例如 `sim scene --follow` 和 `sim policy --joystick /dev/input/js0`。
 
-带相机的任务档案自动托管**机器人数据网页** `http://127.0.0.1:8765/`。`door` 显示 RGB 和深度，`parkour`、`hybrid` 显示 Raw 和 Model。场景入口支持 `--no-data-web` 关闭网页，`--data-web-port` 换端口，`--record` 启动录制。录制落盘 `logs/recordings/`，格式见 [监控与录制说明](../monitor/README.md)。
+带相机的任务档案自动托管**机器人数据网页** `http://127.0.0.1:8765/`。`door` 网页只显示深度，`parkour`、`hybrid` 网页显示 Raw 和 Model。场景入口支持 `--no-data-web` 关闭网页，`--data-web-port` 换端口，`--record` 启动录制。录制落盘 `logs/recordings/`，不保存 RGB 或 MP4，格式见 [监控与录制说明](../monitor/README.md)。
 
 不带 `--profile` 时保留原有共享仿真行为：
 
@@ -66,7 +66,7 @@ door 场景包含 35 kg 被动门板、把手和被动铰链，不新增机器�
 - Model：可选的策略预处理深度；
 - RGB：可选的独立彩色图像。
 
-Parkour 使用低分辨率 Raw 36×64 和 Model 18×32 双窗口，白框表示模型裁剪区域。door 的 `pipeline: none` 不生成 Model，配置 `rgb` 时显示 RGB/Depth 双窗口，未配置时为 Raw 单窗口。
+Parkour 使用低分辨率 Raw 36×64 和 Model 18×32 双窗口，白框表示模型裁剪区域。door 的 `pipeline: none` 不生成 Model；MuJoCo 本地相机预览可按配置显示 RGB/Depth，Monitor 网页只显示深度。
 
 深度与 RGB 使用独立相机。深度原点对应左红外成像器，RGB 由相机模块中的外参确定。两路使用同一仿真时间和帧序号，不做逐像素对齐或双目噪声仿真。
 

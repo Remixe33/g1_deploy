@@ -1,8 +1,6 @@
 """统一数据网页的相机源：实机 RealSense / 仿真注入 / mock 合成。
 
-帧为鸭子类型：需带 raw（米制深度 float32 HxW）、rgb（HxWx3 uint8 RGB 或 None）、
-sequence（单调递增）、time（源时间戳秒）、fps 属性——apps/simulation 的 DepthFrame
-天然满足，仿真注入无需转换。
+帧包含米制深度 raw、sequence、源时间 time、标称 fps 与主机单调时间 capture_monotonic。
 """
 import json
 import math
@@ -23,15 +21,16 @@ def load_camera_module(path):
     return module
 
 
-def _frame(raw, rgb, sequence, time, fps):
-    return types.SimpleNamespace(raw=raw, rgb=rgb, sequence=sequence, time=time, fps=fps,
+def _frame(raw, sequence, source_time, fps, capture_monotonic, **metadata):
+    return types.SimpleNamespace(raw=raw, sequence=sequence, time=source_time, fps=fps,
+                                 capture_monotonic=capture_monotonic, **metadata,
                                  height=raw.shape[0], width=raw.shape[1])
 
 
 class SimSource:
     """仿真注入源：渲染在仿真主/查看器线程完成（deposit），本类只做信箱。
 
-    窗格随相机模块 pipeline 推导：none → rgb+depth（door 原生）；parkour → raw+model。
+    窗格随相机模块 pipeline 推导：none → depth（door 原生）；parkour → raw+model。
     """
 
     def __init__(self):
@@ -43,12 +42,13 @@ class SimSource:
     def set_module(self, module):
         self._module = module
         pipeline = module.get("pipeline")
-        self.panes = ["rgb", "depth"] if pipeline == "none" else ["raw", "model"]
+        self.panes = ["depth"] if pipeline == "none" else ["raw", "model"]
 
     def deposit(self, frame):
-        """仿真主线程渲染后调用；DepthFrame 为冻结数据类，跨线程传递天然安全。"""
+        received = time.monotonic()
         with self._condition:
-            self._frame = frame
+            self._frame = _frame(frame.raw, frame.sequence, frame.time, frame.fps,
+                                 received, model=frame.model)
             self._condition.notify_all()
 
     def read(self, timeout=1.0):
@@ -74,19 +74,15 @@ class SimSource:
         module = self._module or {}
         stream = module.get("simulation_stream", module.get("stream", {}))
         size = {"width": stream.get("width", 640), "height": stream.get("height", 480)}
-        pane_sizes = dict.fromkeys(self.panes, size)
-        rgb_stream = module.get("rgb", {}).get("stream")
-        if "rgb" in pane_sizes and rgb_stream:
-            pane_sizes["rgb"] = {"width": rgb_stream["width"], "height": rgb_stream["height"]}
         return {"source": "simulation", **size, "fps": stream.get("fps", 30),
-                "panes": list(self.panes), "pane_sizes": pane_sizes}
+                "panes": list(self.panes)}
 
     def close(self):
         pass
 
 
 class MockSource:
-    """无设备合成源：斜坡米制深度 + 彩条 RGB，软件节拍；本机全流程验证用。"""
+    """无设备合成源：以软件节拍生成斜坡深度。"""
 
     def __init__(self, camera_json=None):
         module = load_camera_module(camera_json) if camera_json else {}
@@ -101,14 +97,12 @@ class MockSource:
     def read(self):
         self._deadline = max(self._deadline + 1.0 / self.fps, time.monotonic())
         time.sleep(max(0.0, self._deadline - time.monotonic()))
+        received = time.monotonic()
         self.sequence += 1
         row = np.linspace(0.3, 2.5, self.width, dtype=np.float32)
         raw = np.tile(row, (self.height, 1))
         raw += float(self.sequence % 30) * 0.001  # 轻微变化，便于确认视频在动
-        rgb = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        for band in range(6):
-            rgb[:, band * self.width // 6:(band + 1) * self.width // 6, band % 3] = 40 + band * 40
-        return _frame(raw, rgb, self.sequence, time.monotonic(), self.fps)
+        return _frame(raw, self.sequence, received, self.fps, received)
 
     def intrinsics(self):
         """合成针孔内参（与 realsense_web --mock 先例一致）。"""
@@ -150,9 +144,16 @@ class RealSenseSource:
         self._scale = 1.0
         self._intrinsics = None
         self._last_number = None
-        self._color_enabled = bool(module.get("rgb"))
-        self._color_stream = module.get("rgb", {}).get("stream", {})
-        self.panes = ["rgb", "depth"] if self._color_enabled else ["depth"]
+        self._first_received = None
+        self._last_received = None
+        self._device_frames_skipped = 0
+        self._device_counter_resets = 0
+        self._capture_timeouts = 0
+        self._active_fps = None
+        self._filter_frames = 0
+        self._filter_seconds = 0.0
+        self._filter_max_seconds = 0.0
+        self.panes = ["depth"]
 
     def open(self):
         import pyrealsense2 as rs
@@ -160,14 +161,10 @@ class RealSenseSource:
         if self.serial:
             config.enable_device(self.serial)
         config.enable_stream(rs.stream.depth, self.width, self.height, rs.format.z16, self.fps)
-        if self._color_enabled:
-            color = self._color_stream
-            config.enable_stream(rs.stream.color, int(color.get("width", 640)),
-                                 int(color.get("height", 480)), rs.format.bgr8,
-                                 int(color.get("fps", self.fps)))
         self._pipeline = rs.pipeline()
         profile = self._pipeline.start(config)
         depth_profile = profile.get_stream(rs.stream.depth).as_video_stream_profile()
+        self._active_fps = depth_profile.fps()
         self._scale = profile.get_device().first_depth_sensor().get_depth_scale()
         intrinsics = depth_profile.get_intrinsics()
         self._intrinsics = {"fx": intrinsics.fx, "fy": intrinsics.fy,
@@ -176,36 +173,61 @@ class RealSenseSource:
         self._filters = (rs.disparity_transform(True), rs.spatial_filter(), rs.temporal_filter(),
                          rs.disparity_transform(False), rs.hole_filling_filter(1))
 
-    def read(self):
-        sample = self._pipeline.wait_for_frames(1000)
+    def capture(self, timeout_ms=1000):
+        ready, sample = self._pipeline.try_wait_for_frames(timeout_ms)
+        received = time.monotonic()
+        if not ready:
+            self._capture_timeouts += 1
+            return None
         depth_frame = sample.get_depth_frame()
         if not depth_frame:
             return None
         number = depth_frame.get_frame_number()
         if self._last_number is not None and number == self._last_number:
             return None  # 同帧去重
+        if self._last_number is not None:
+            if number > self._last_number:
+                self._device_frames_skipped += number - self._last_number - 1
+            else:
+                self._device_counter_resets += 1
         self._last_number = number
+        if self._first_received is None:
+            self._first_received = received
+        self._last_received = received
+        self.sequence += 1
+        return depth_frame, received, number
+
+    def read(self):
+        captured = self.capture()
+        if captured is None:
+            return None
+        depth_frame, received, number = captured
+        sensor_time = float(depth_frame.get_timestamp()) * 0.001
+        filter_start = time.monotonic()
         for stage in self._filters:
             depth_frame = stage.process(depth_frame)
-        received = time.monotonic()
-        sensor_time = float(depth_frame.get_timestamp()) * 0.001
+        filter_seconds = time.monotonic() - filter_start
+        self._filter_frames += 1
+        self._filter_seconds += filter_seconds
+        self._filter_max_seconds = max(self._filter_max_seconds, filter_seconds)
         raw = np.asanyarray(depth_frame.get_data()).astype(np.float32) * self._scale
-        rgb = None
-        if self._color_enabled:
-            color_frame = sample.get_color_frame()
-            if color_frame:
-                rgb = np.asanyarray(color_frame.get_data())[:, :, ::-1].copy()  # SDK BGR → RGB
-        self.sequence += 1
-        return _frame(raw, rgb, self.sequence, sensor_time, float(self.fps))
+        return _frame(raw, self.sequence, sensor_time, float(self.fps), received,
+                      device_frame_number=number)
 
     def info(self):
         info = {"source": "realsense", "width": self.width, "height": self.height,
                 "fps": self.fps, "depth_scale": self._scale,
                 "intrinsics": self._intrinsics,
                 "filters": "disparity+spatial+temporal+hole_filling"}
-        if self._color_enabled:
-            info["pane_sizes"] = {"rgb": {"width": int(self._color_stream.get("width", 640)),
-                                          "height": int(self._color_stream.get("height", 480))}}
+        span = (self._last_received - self._first_received) if self._last_received is not None else 0.0
+        info.update(active_fps=self._active_fps, received_frames=self.sequence,
+                    received_fps=round((self.sequence - 1) / span, 3) if span > 0 else None,
+                    first_capture_monotonic=self._first_received, last_capture_monotonic=self._last_received,
+                    device_frames_skipped=self._device_frames_skipped,
+                    device_counter_resets=self._device_counter_resets,
+                    capture_timeouts=self._capture_timeouts,
+                    filter_frames=self._filter_frames, filter_seconds=round(self._filter_seconds, 6),
+                    filter_max_ms=round(self._filter_max_seconds * 1000, 3))
         if self.serial:
             info["serial"] = self.serial
         return info

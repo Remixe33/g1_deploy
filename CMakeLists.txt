@@ -141,6 +141,7 @@ install(FILES apps/web_addresses.py DESTINATION apps)
 install(PROGRAMS "${REPOSITORY_ROOT}/apps/monitor/monitor.sh" DESTINATION . RENAME monitor)
 install(FILES apps/monitor/joint_monitor.py apps/monitor/robot_data_web.py
     apps/monitor/camera_sources.py apps/monitor/recorder.py apps/monitor/requirements.txt
+    apps/monitor/probe_realsense.py
     DESTINATION apps/monitor)
 install(FILES "${REPOSITORY_ROOT}/apps/monitor/static/joint_monitor.html" DESTINATION apps/monitor/static)
 install(FILES "${REPOSITORY_ROOT}/README.md" "${REPOSITORY_ROOT}/ORIGIN.md" "${REPOSITORY_ROOT}/CHANGELOG.md" DESTINATION .)

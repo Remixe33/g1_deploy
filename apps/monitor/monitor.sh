@@ -9,7 +9,7 @@ Usage: ./g1 monitor [--interface IFACE] [--host IP] [--port PORT]
 
 Uses DDS domain 0. Options override .g1-onboard.conf. Without a positional
 interface, the default is joints + D435 depth. Use --camera-config to select
-RGB-D explicitly. The legacy positional form defaults to joints only.
+the depth profile. The legacy positional form defaults to joints only.
 HTTP defaults to 127.0.0.1:8765. Use --host 0.0.0.0 for direct LAN access.
 HELP
 }

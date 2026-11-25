@@ -40,7 +40,7 @@ cp -n .g1-onboard.conf.example .g1-onboard.conf
 
 监控默认显示关节、IMU 和 D435 深度（480×270、60 Hz），只监听 PC2 的 `127.0.0.1:8765`。工控机可用 [SSH 端口转发](WEB.md#从工控机访问) 访问；可信网络中也可显式传入 `--host 0.0.0.0`，再打开日志中可达的 PC2 地址。已有配置中的 `MONITOR_HOST`、`MONITOR_PORT` 仍然生效，如需恢复仅本机访问，请移除原有的 `MONITOR_HOST` 或改为 `127.0.0.1`。录制保存在 `logs/recordings/`。
 
-`./g1 monitor --interface eth0 --joints-only` 不开相机，适用于 Parkour 或 Hybrid 已占用 D435 的场景。需要验证 RGB-D 时，在相机空闲且有操作者确认的条件下显式传入 `--camera-config profiles/configs/cameras/d435_rgbd.json`（路径相对于当前终端目录）。有一台反馈机的原厂图传占用了色彩节点，另有 RGB 开流段错误尚未定位；部署器既不停止图传，也不会自动重试 RGB。无相机时可先用 `--joints-only` 验证网页和 DDS。更多细节见 [网页监控](WEB.md) 和 [RealSense 说明](../apps/realsense/README.md)。
+`./g1 monitor --interface eth0 --joints-only` 不开相机，适用于 Parkour 或 Hybrid 已占用 D435 的场景。Monitor 只开启深度流，录制保留点云和时间戳，不保存 RGB 或 MP4。无相机时可先用 `--joints-only` 验证网页和 DDS。更多细节见 [网页监控](WEB.md) 和 [RealSense 说明](../apps/realsense/README.md)。
 
 ## 发布依赖包
 

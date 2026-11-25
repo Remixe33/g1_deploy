@@ -18,7 +18,7 @@
 | 仿真 | 随仓库提供的仿真适配与场景资产，运行时需安装 MuJoCo | [apps/simulation/README.md](apps/simulation/README.md) |
 | 头部标定 | 利用双手轮廓求解头部后仰角、旋转轴和相机外参（从源码运行） | [apps/head_calibration/README.md](apps/head_calibration/README.md) |
 | RealSense | C++ 深度采集、相机检查和独立网页预览 | [apps/realsense/README.md](apps/realsense/README.md) |
-| 数据监控 | 关节、IMU、空跑目标、RGB-D 预览和录制 | [apps/monitor/README.md](apps/monitor/README.md) |
+| 数据监控 | 关节、IMU、空跑目标、实时深度和点云录制 | [apps/monitor/README.md](apps/monitor/README.md) |
 | 任务档案 | 组合程序/策略、场景、机器人和相机 | [profiles/README.md](profiles/README.md) |
 | 相机模块 | 流格式、视场、RGB–Depth 外参和官方参数 | [profiles/configs/cameras/README.md](profiles/configs/cameras/README.md) |
 | 机器人模块 | 标准头部和后仰安装配置 | [profiles/configs/robots/README.md](profiles/configs/robots/README.md) |
@@ -104,7 +104,7 @@ cpack -G TGZ
 
 两端默认使用 `lo` 和 DDS 域 `1`。如用 `--domain` 更换域号，两个终端须使用同一个正数域号。场景命令可加 `--follow` 跟随机器人。
 
-`door` 档案加载门场景、后仰 20° 的头部和 RGB-D 相机，由 DWaQ 提供行走控制。带相机的档案在 `http://127.0.0.1:8765/` 提供监控和录制。`door` 显示 RGB 和深度，`parkour`、`hybrid` 显示原始深度和模型输入。`dwaq` 档案没有配置相机网页。录制输出到 `logs/recordings/`，`door` 录制包括 RGB 与深度伪彩 MP4、PLY 点云、状态 CSV 和元数据。详见 [仿真说明](apps/simulation/README.md) 和 [录制格式](apps/monitor/README.md#录制格式)。
+`door` 档案加载门场景、后仰 20° 的头部和仿真相机，由 DWaQ 提供行走控制。带相机的档案在 `http://127.0.0.1:8765/` 提供监控和录制：`door` 网页显示深度，`parkour` 和 `hybrid` 网页显示原始深度和模型输入。`dwaq` 档案没有配置相机网页。录制输出到 `logs/recordings/`，保存逐帧 PLY 点云、时间戳、状态和元数据，不保存 RGB 或 MP4。详见 [仿真说明](apps/simulation/README.md) 和 [录制格式](apps/monitor/README.md#录制格式)。
 
 以 DWaQ 为例，按 `9/Start` 启用输出，再按 `p/X` 复位，约 3 秒后按 `r/A` 进入策略。键盘用 `w/s/a/d/q/e` 移动或转向，`x` 清零，空格停止。
 

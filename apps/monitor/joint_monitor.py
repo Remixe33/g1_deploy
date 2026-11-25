@@ -18,7 +18,7 @@ from recorder import Recorder
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from web_addresses import print_web_addresses
 
-DEPTH_RANGE_M = 2.5  # 伪彩归一化区间，与录制一致
+DEPTH_RANGE_M = 2.5  # 预览伪彩归一化区间
 
 
 JOINT_NAMES = (
@@ -106,7 +106,7 @@ class JointMonitor:
                 if path == "/api/stream":
                     self.stream()
                     return
-                if path in ("/rgb.mjpg", "/depth.mjpg", "/raw.mjpg", "/model.mjpg"):
+                if path in ("/depth.mjpg", "/raw.mjpg", "/model.mjpg"):
                     monitor.mjpeg(self, path[1:-5])
                     return
                 if path in ("/", "/index.html"):
@@ -207,12 +207,12 @@ class JointMonitor:
         print(f"Recording started: {self.recorder.dir}", flush=True)
 
     def stop_recording(self):
-        meta = self.recorder.stop()
+        meta = self.recorder.stop(self.camera_info)
         print(f"Recording stopped: {json.dumps(meta, ensure_ascii=False)}", flush=True)
         return meta
 
     def camera_loop(self):
-        """相机线程：以源帧率读取全量帧（录制备份），并按源窗格维护 MJPEG 信箱。"""
+        """保存实际收到的相机帧，并独立限制 MJPEG 预览刷新率。"""
         panes = getattr(self.camera_source, "panes", ["depth"]) if self.camera_source is not None else []
         last_preview = 0.0
         while not self.stopping.is_set():
@@ -249,14 +249,11 @@ class JointMonitor:
     @staticmethod
     def pane_image(frame, pane):
         """生成供 JPEG 编码的 BGR 预览图。"""
-        if pane == "rgb":
-            rgb = getattr(frame, "rgb", None)
-            return None if rgb is None else cv2.cvtColor(np.asarray(rgb), cv2.COLOR_RGB2BGR)
         if pane == "model" and getattr(frame, "model", None) is not None:
             values = np.clip(np.nan_to_num(np.asarray(frame.model), nan=0., posinf=1.), 0., 1.)
         else:
             values = np.clip(np.nan_to_num(np.asarray(frame.raw) / DEPTH_RANGE_M, posinf=1.), 0., 1.)
-        # 与 MuJoCo 预览和深度录像一致：近处用暖色，远处用冷色。
+        # 与 MuJoCo 预览一致：近处用暖色，远处用冷色。
         level = np.rint((1 - values) * 255).astype(np.uint8)
         image = cv2.applyColorMap(level, cv2.COLORMAP_TURBO)
         if pane == "raw":
@@ -469,7 +466,7 @@ class JointMonitor:
             self.thread.join(timeout=2)
         self.server.server_close()
         if self.recorder is not None and self.recorder.recording:
-            self.recorder.stop()
+            self.stop_recording()
         if self.camera_source is not None:
             self.camera_source.close()
 
@@ -508,12 +505,13 @@ def main():
             camera_source.set_module(load_camera_module(args.camera_config))
 
     monitor = JointMonitor(args.host, args.port, args.rate, camera_source=camera_source,
-                           camera_module=camera_module, record_root=args.record_dir,
-                           record_start=args.record)
+                           camera_module=camera_module, record_root=args.record_dir)
     try:
         monitor.start_subscribers(args.domain, args.interface)
         if camera_source is not None and hasattr(camera_source, "open"):
             camera_source.open()
+        if args.record:
+            monitor.start_recording()
         monitor.start()
         print(f"Waiting for G1 29DOF DDS data: domain={args.domain}, interface={args.interface}. Ctrl+C to exit.", flush=True)
         while True:

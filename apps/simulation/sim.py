@@ -179,7 +179,7 @@ def main():
                 data_web.start_subscribers(args.domain, "lo", init_factory=True)
                 data_web.start()
                 data_web_url = f"http://127.0.0.1:{args.data_web_port}/"
-                print(f"Robot data web: {data_web_url} (joints/IMU, camera RGB/Depth, "
+                print(f"Robot data web: {data_web_url} (joints/IMU, depth, "
                       f"record button on the page)", flush=True)
                 try:
                     import webbrowser
