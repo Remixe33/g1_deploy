@@ -29,7 +29,9 @@ bash apps/monitor/monitor.sh eth0 0.0.0.0 8765                         # 旧行�
 
 相机出帧后，可用网页顶部的 `开始录制/停止录制` 按钮（POST `/api/record/start|stop`），也可在启动时加 `--record`。
 
-网页不缩放送出的深度帧，刷新目标跟随相机配置；实际显示频率仍受采集、编码和浏览器性能影响。实机单个 D435 不能由 Monitor 与远端桥同时打开；远端桥占用相机时，Monitor 用 `--joints-only`。
+打开网页时默认显示深度。点「暂停预览」可断开当前页面的深度画面，继续查看关节和 IMU，也可以开始或停止录制。点「继续预览」可从最新帧恢复。没有任何页面观看时，后台停止 JPEG 编码。
+
+采集线程先将深度帧交给点云录制，预览线程再按相机配置编码最新帧。同一画面由所有观看者共享。实际显示频率受采集、编码和浏览器性能影响。实机单个 D435 不能由 Monitor 与远端桥同时打开；远端桥占用相机时，Monitor 用 `--joints-only`。
 
 ## 录制格式
 
@@ -59,12 +61,13 @@ LD_LIBRARY_PATH="$PWD/.deps/realsense/lib:$PWD/.deps/runtime/python/lib${LD_LIBR
   .deps/python/bin/python3 apps/monitor/probe_realsense.py --seconds 30
 ```
 
-随后用相同的 640×480 @30 Hz 配置分别运行 Monitor 预览和至少 30 秒的点云录制。对比 `/api/status` 中的实收帧率、原始设备帧号缺口和滤波耗时，以及 `meta.json` 中的保存帧率与 PLY 写入耗时。要验证 30 Hz 保存，检查约 30 秒内是否保存约 900 张点云，PLY 与时间戳行是否一一对应，以及相机帧号是否连续。
+随后用相同的 640×480 @30 Hz 配置分别在暂停预览和开启预览时录制至少 30 秒。暂停组先确认 `/api/status` 的 `camera.preview_clients` 为 0。对比实收帧率、设备帧号缺口和滤波耗时，以及两组 `meta.json` 的保存帧率和 PLY 写入耗时。以 `saved_fps ≥ 29.7`、设备帧号连续、PLY 与时间戳逐一对应为验收条件。
 
 ## 端点
 
 - `/`：统一网页；`/api/joints`、`/api/stream`（SSE 关节流）、`/api/status`（相机+录制状态）；
 - `/depth.mjpg`：MJPEG 深度实时流；Parkour 仿真使用 `/raw.mjpg` 和 `/model.mjpg`。
+- `/api/status` 的 `camera` 记录 `preview_clients`（当前各窗格的连接总数）、`preview_encoded_frames`（累计成功编码的 JPEG 数）和 `preview_skipped_frames`（有订阅时被更新帧覆盖的待预览帧数，按窗格累计）。点云序号缺口见 `recording.sequence_gaps`。
 - `POST /api/record/start|stop`：录制开关。
 
 ## 依赖

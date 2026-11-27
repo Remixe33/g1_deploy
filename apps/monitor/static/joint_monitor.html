@@ -21,12 +21,15 @@ header{display:flex;justify-content:space-between;align-items:center;gap:20px;fl
 .cam-card img{display:block;width:100%;height:100%;object-fit:contain}
 .cam-card h2{position:absolute;top:8px;left:8px;margin:0;padding:4px 8px;border-radius:6px;background:#0b1422cc;color:#dce5f1;font-size:14px}
 .header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
-#record-status{color:#91a0b5;overflow-wrap:anywhere}#record-status:empty{display:none}
+header>.header-actions{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;flex:0 1 32rem;margin-inline-start:auto}
+#record-status{color:#91a0b5;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#record{inline-size:6rem;white-space:nowrap}
+@media(max-width:600px){header>.header-actions{grid-template-columns:minmax(0,1fr) max-content}header #status{grid-column:1/-1;justify-self:end}}
 #record.rec{color:#f87171;border-color:#b45c53}@media(max-width:1000px){.cam-grid{grid-template-columns:1fr}}</style>
 </head>
 <body>
 <header><div><h1>G1 <span style="color:#63ddcc">/</span> 机器人数据监控</h1><p>查看关节状态、跟踪误差、相机画面与数据录制</p></div>
-<div class="header-actions"><div id="status" class="status" role="status">正在连接…</div><button id="record" type="button" style="display:none">开始录制</button><span id="record-status"></span></div></header>
+<div class="header-actions"><div id="status" class="status" role="status">正在连接…</div><span id="record-status"></span><button id="record" type="button" style="display:none">开始录制</button></div></header>
 <div class="stats"><span>控制端 Enable<b id="enable">—</b></span><span>关节数量<b id="count">—</b></span><span>监控时间 / s<b id="time">—</b></span><span>最大跟踪误差<b id="error">—</b></span><span>数据年龄 / ms<b id="age">—</b></span></div>
 <h2 style="font-size:18px">Torso IMU · 躯干 <span id="torso-status" class="status">等待数据</span></h2><p style="margin-bottom:14px">来源 rt/secondary_imu · Parkour 使用此 IMU · 超过 100 ms 标记过期</p><section class="imu-grid torso-grid" aria-label="Torso IMU 实时读数">
 <div class="panel imu-card"><h2 id="torso-rpy-label">姿态 RPY / rad</h2><div class="imu-vector"><span>Roll<b id="torso-rpy-0">—</b></span><span>Pitch<b id="torso-rpy-1">—</b></span><span>Yaw<b id="torso-rpy-2">—</b></span></div></div>
@@ -39,7 +42,10 @@ header{display:flex;justify-content:space-between;align-items:center;gap:20px;fl
 <div class="panel imu-card"><h2 id="imu-accelerometer-label">加速度 / m/s²</h2><div class="imu-vector"><span>X<b id="imu-accelerometer-0">—</b></span><span>Y<b id="imu-accelerometer-1">—</b></span><span>Z<b id="imu-accelerometer-2">—</b></span></div></div>
 <div class="panel imu-card"><h2 id="imu-quaternion-label">四元数 / w, x, y, z</h2><div class="imu-vector"><span>W<b id="imu-quaternion-0">—</b></span><span>X<b id="imu-quaternion-1">—</b></span><span>Y<b id="imu-quaternion-2">—</b></span><span>Z<b id="imu-quaternion-3">—</b></span></div></div>
 </section>
+<div class="header-actions">
 <h2 style="font-size:18px">相机 <span id="camera-status" class="status">未启用</span></h2>
+<button id="preview-toggle" type="button" hidden>暂停预览</button>
+</div>
 <section id="camera-panes" class="cam-grid" aria-label="相机实时画面" style="margin-bottom:20px;display:none"></section>
 <main class="layout">
 <section class="panel" aria-label="关节数据"><div class="toolbar"><input id="search" placeholder="搜索关节，例如 elbow" aria-label="搜索关节"><select id="unit" aria-label="角度单位"><option value="rad">弧度 rad</option><option value="deg">角度 °</option></select><button id="pause">暂停显示</button></div>
@@ -178,25 +184,25 @@ $('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'继续显�
 window.addEventListener('resize',()=>{dirty=true;});
 // 相机与录制状态轮询（1 Hz）；MJPEG 窗格由浏览器自行拉流
 let recording=false;
-async function pollStatus(){
- try{
-  const res=await fetch('/api/status'); if(!res.ok) return;
-  const s=await res.json();
-  const cam=s.camera||{};
-  const panes=cam.panes||[];
-  const online=!!cam.online&&panes.length>0;
+let previewPaused=false, camera={};
+function renderCamera(){
+  const panes=camera.panes||[];
+  const online=!!camera.online&&panes.length>0;
   const badge=$('camera-status');
-  badge.textContent=online?`${cam.source} · ${cam.width}×${cam.height} · 目标 ${cam.fps} Hz`:'未启用';
+  badge.textContent=online?`${camera.source} · ${camera.width}×${camera.height} · 目标 ${camera.fps} Hz`:'未启用';
   badge.className='status'+(online?' live':'');
+  $('preview-toggle').hidden=!online;
+  $('preview-toggle').textContent=previewPaused?'继续预览':'暂停预览';
   const PANE_LABEL={depth:'Depth',raw:'Depth Raw 36×64',model:'Model 18×32'};
   const wrap=$('camera-panes');
-  const layout=panes.map(pane=>{
-    const {width,height}=cam.pane_sizes?.[pane]??cam;
+  const layout=(online&&!previewPaused?panes:[]).map(pane=>{
+    const {width,height}=camera.pane_sizes?.[pane]??camera;
     return [pane,width,height];
   });
   const wanted=JSON.stringify(layout);
   if (wrap.dataset.panes!==wanted){  // 窗格或尺寸变化时更新布局
-    wrap.dataset.panes=wanted; wrap.innerHTML='';
+    for (const img of wrap.querySelectorAll('img')) img.removeAttribute('src');
+    wrap.dataset.panes=wanted; wrap.replaceChildren();
     for (const [pane,width,height] of layout) {
       const card=document.createElement('div'); card.className='panel cam-card';
       if (width>0 && height>0) card.style.aspectRatio=`${width} / ${height}`;
@@ -207,11 +213,21 @@ async function pollStatus(){
       card.appendChild(head); card.appendChild(img); wrap.appendChild(card);
     }
   }
-  wrap.style.display=online?'grid':'none';
-  $('record').style.display=online?'inline-block':'none';
+  wrap.style.display=layout.length?'grid':'none';
+}
+$('preview-toggle').onclick=()=>{previewPaused=!previewPaused;renderCamera();};
+async function pollStatus(){
+ try{
+  const res=await fetch('/api/status'); if(!res.ok) return;
+  const s=await res.json();
+  camera=s.camera||{};
+  renderCamera();
   const rec=s.recording||{};
+  $('record').style.display=camera.online||rec.active?'inline-block':'none';
   if(recording!==!!rec.active){recording=!!rec.active;$('record').textContent=recording?'停止录制':'开始录制';$('record').classList.toggle('rec',recording);}
-  $('record-status').textContent=rec.active?`录制中 · ${rec.frames||0} 帧 · ${rec.state_rows||0} 行状态`:(rec.dir?`已保存：${rec.dir}`:'');
+  const recordStatus=$('record-status');
+  recordStatus.textContent=rec.active?`录制中 · ${rec.frames||0} 帧 · ${rec.state_rows||0} 行状态`:(rec.dir?`已保存：${rec.dir}`:'');
+  recordStatus.title=recordStatus.textContent;
  }catch(e){}
 }
 $('record').onclick=async()=>{try{await fetch(recording?'/api/record/stop':'/api/record/start',{method:'POST'});}catch(e){} pollStatus();};

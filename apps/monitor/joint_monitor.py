@@ -4,6 +4,8 @@ import math
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from select import select
+from socket import MSG_PEEK
 import sys
 import threading
 import time
@@ -91,15 +93,25 @@ class JointMonitor:
         self.recorder = None
         if record_start:
             self.start_recording()
-        # 相机 MJPEG 信箱：相机线程写入编码后的 JPEG，端点流式推送。
         self.camera_lock = threading.Condition()
-        self.camera_jpegs = None
+        self.camera_frame = None
         self.camera_sequence = 0
+        self.camera_panes = (
+            tuple(sorted(getattr(camera_source, "panes", ("depth",)))) if camera_source is not None else ()
+        )
+        self.preview_clients = dict.fromkeys(self.camera_panes, 0)
+        self.preview_selected_sequence = dict.fromkeys(self.camera_panes, 0)
+        self.preview_jpegs = {}
+        self.preview_encoded_frames = 0
+        self.preview_skipped_frames = 0
         self.camera_thread = None
+        self.preview_thread = None
         self.subscribers = []
         if camera_source is not None:
             self.camera_thread = threading.Thread(target=self.camera_loop,
                                                   name="camera-source", daemon=True)
+            self.preview_thread = threading.Thread(target=self.preview_loop,
+                                                   name="camera-preview", daemon=True)
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -213,9 +225,7 @@ class JointMonitor:
         return meta
 
     def camera_loop(self):
-        """保存实际收到的相机帧，并独立限制 MJPEG 预览刷新率。"""
-        panes = getattr(self.camera_source, "panes", ["depth"]) if self.camera_source is not None else []
-        cadence = DepthCadence(self.camera_source.stream)
+        """先录制真实帧，再将最新帧交给预览线程。"""
         while not self.stopping.is_set():
             try:
                 frame = self.camera_source.read()
@@ -230,21 +240,47 @@ class JointMonitor:
                     self.recorder.add_frame(frame)
             except Exception as error:
                 print(f"Recorder error: {error}", flush=True)
-            now = time.monotonic_ns()
-            if now < cadence.next_ns:
-                continue
-            cadence.advance(now)
+            with self.camera_lock:
+                self.preview_skipped_frames += sum(
+                    clients > 0 and self.preview_selected_sequence[pane] < self.camera_sequence
+                    for pane, clients in self.preview_clients.items()
+                )
+                self.camera_frame = frame
+                self.camera_sequence += 1
+                if any(self.preview_clients.values()):
+                    self.camera_lock.notify_all()
+
+    def preview_loop(self):
+        """按任务节拍编码最新帧，每个订阅中的窗格只编码一次。"""
+        cadence = DepthCadence(self.camera_source.stream)
+        while True:
+            with self.camera_lock:
+                if self.stopping.is_set():
+                    return
+                sequence = self.camera_sequence
+                panes = [pane for pane, clients in self.preview_clients.items()
+                         if clients and self.preview_selected_sequence[pane] < sequence]
+                if not panes:
+                    self.camera_lock.wait()
+                    continue
+                now = time.monotonic_ns()
+                if now < cadence.next_ns:
+                    self.camera_lock.wait((cadence.next_ns - now) / 1e9)
+                    continue
+                cadence.advance(now)
+                frame = self.camera_frame
+                for pane in panes:
+                    self.preview_selected_sequence[pane] = sequence
             jpegs = {}
             for pane in panes:
                 image = self.pane_image(frame, pane)
-                if image is None:
-                    continue
                 ok, buffer = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:
-                    jpegs[pane] = buffer.tobytes()
+                    jpegs[pane] = (sequence, buffer.tobytes())
             with self.camera_lock:
-                self.camera_jpegs = jpegs
-                self.camera_sequence += 1
+                self.preview_encoded_frames += len(jpegs)
+                self.preview_jpegs.update((pane, jpeg) for pane, jpeg in jpegs.items()
+                                          if self.preview_clients[pane])
                 self.camera_lock.notify_all()
 
     @staticmethod
@@ -262,41 +298,61 @@ class JointMonitor:
         return image
 
     def mjpeg(self, handler, key):
+        if key not in self.preview_clients:
+            handler.send_error(404)
+            return
         handler.send_response(200)
         handler.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         handler.send_header("Cache-Control", "no-store")
         handler.end_headers()
         handler.connection.settimeout(5)
-        seen = -1
+        with self.camera_lock:
+            seen = self.camera_sequence - 1
+            if not self.preview_clients[key]:
+                self.preview_selected_sequence[key] = max(0, seen)
+            self.preview_clients[key] += 1
+            self.camera_lock.notify_all()
         try:
             while not self.stopping.is_set():
                 with self.camera_lock:
-                    if self.camera_jpegs is None or self.camera_sequence == seen:
-                        self.camera_lock.wait_for(
-                            lambda: self.stopping.is_set() or
-                            (self.camera_jpegs is not None and self.camera_sequence != seen), timeout=1)
-                        continue
+                    ready = self.camera_lock.wait_for(
+                        lambda: self.stopping.is_set() or self.preview_jpegs.get(key, (-1,))[0] > seen,
+                        timeout=1)
                     if self.stopping.is_set():
                         break
-                    seen = self.camera_sequence
-                    data = self.camera_jpegs.get(key)
-                if data is None:
+                    if ready:
+                        seen, data = self.preview_jpegs[key]
+                if not ready:
+                    # 停帧时没有写操作可发现关闭的浏览器连接。
+                    if select([handler.connection], [], [], 0)[0] and not handler.connection.recv(1, MSG_PEEK):
+                        break
                     continue
                 handler.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
                                     str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n")
         except (OSError, TimeoutError):
             pass
+        finally:
+            with self.camera_lock:
+                self.preview_clients[key] -= 1
+                if not self.preview_clients[key]:
+                    self.preview_jpegs.pop(key, None)
+                self.camera_lock.notify_all()
 
     def camera_status(self):
         with self.camera_lock:
-            panes = sorted(self.camera_jpegs or {})
             sequence = self.camera_sequence
+            preview_clients = sum(self.preview_clients.values())
+            preview_encoded_frames = self.preview_encoded_frames
+            preview_skipped_frames = self.preview_skipped_frames
         source_info = self.camera_info()
         recording = self.recorder.recording if self.recorder is not None else False
         return {"camera": {**source_info,
-                           "online": bool(panes),
+                           "online": sequence > 0,
                            "sequence": sequence,
-                           "panes": panes},
+                           "panes": list(self.camera_panes),
+                           "preview_clients": preview_clients,
+                           "preview_encoded_frames": preview_encoded_frames,
+                           "preview_skipped_frames": preview_skipped_frames},
                 "recording": {"active": recording,
                               "dir": str(self.recorder.dir) if recording else None,
                               "frames": self.recorder.frames if self.recorder is not None else 0,
@@ -307,6 +363,7 @@ class JointMonitor:
         self.thread.start()
         if self.camera_thread is not None:
             self.camera_thread.start()
+            self.preview_thread.start()
         print_web_addresses("Data web", self.server.server_address)
 
     def start_subscribers(self, domain, interface, init_factory=True):
@@ -466,6 +523,8 @@ class JointMonitor:
             self.server.shutdown()
             self.thread.join(timeout=2)
         self.server.server_close()
+        if self.preview_thread is not None and self.preview_thread.is_alive():
+            self.preview_thread.join(timeout=2)
         if self.recorder is not None and self.recorder.recording:
             self.stop_recording()
         if self.camera_source is not None:
