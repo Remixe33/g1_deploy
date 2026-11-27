@@ -106,9 +106,10 @@ def prepare(args, lock):
 
 
 def pack(args, lock):
-    url = urlsplit(args.url)
-    if url.scheme != "https" or not url.hostname:
-        raise ValueError("Specify the final HTTPS URL of the bundle.")
+    if args.url is not None:
+        url = urlsplit(args.url)
+        if url.scheme != "https" or not url.hostname:
+            raise ValueError("Specify an HTTPS URL, or omit it for an offline-only bundle.")
     (args.stage / "BUNDLE_VERSION").write_text(lock["version"] + "\n")
     manifest = args.stage / "SHA256SUMS"
     files = sorted(path for path in args.stage.rglob("*") if path.is_file() and path != manifest)
@@ -137,7 +138,7 @@ def main():
     pack_args = modes.add_parser("pack")
     pack_args.add_argument("stage", type=Path)
     pack_args.add_argument("destination", type=Path)
-    pack_args.add_argument("url")
+    pack_args.add_argument("url", nargs="?")
     args = parser.parse_args()
     try:
         lock = json.loads(args.lock.read_text())

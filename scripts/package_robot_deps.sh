@@ -5,10 +5,11 @@ if [[ "${1:-}" == --help || $# == 0 ]]; then
     cat <<'HELP'
 Usage:
   bash scripts/package_robot_deps.sh collect-debs DEB_DIR
-  bash scripts/package_robot_deps.sh pack INPUT_DIR OUTPUT_DIR HTTPS_BUNDLE_URL
+  bash scripts/package_robot_deps.sh pack INPUT_DIR OUTPUT_DIR [HTTPS_BUNDLE_URL]
 
 collect-debs runs on an untouched, online target image with matching APT sources.
 pack takes the five installed prefixes, deb/, wheels/ and SOURCES.txt.
+Omit the URL to create an offline-only bundle.
 See docs/ROBOT_SETUP.md for release preparation and validation.
 HELP
     exit 0
@@ -32,7 +33,7 @@ case "$1" in
             (cd -- "$2" && apt-get download "${packages[@]}")
         fi ;;
     pack)
-        [[ $# == 4 ]] || { echo 'Expected INPUT_DIR OUTPUT_DIR HTTPS_BUNDLE_URL.' >&2; exit 2; }
+        (( $# == 3 || $# == 4 )) || { echo 'Expected INPUT_DIR OUTPUT_DIR [HTTPS_BUNDLE_URL].' >&2; exit 2; }
         input="$(realpath "$2")"
         output="$(realpath -m "$3")"
         for path in runtime/python/bin/python3 unitree-sdk2/lib/cmake/unitree_sdk2/unitree_sdk2Config.cmake \
@@ -67,6 +68,6 @@ case "$1" in
         done
         cp -r -- "$input/deb" "$input/wheels" "$stage/payload/"
         cp -- "$input/SOURCES.txt" "$stage/payload/"
-        python3 "$scripts/robot_deps.py" --lock "$scripts/robot-deps-release.json" pack "$stage/payload" "$output" "$4" ;;
+        python3 "$scripts/robot_deps.py" --lock "$scripts/robot-deps-release.json" pack "$stage/payload" "$output" "${@:4}" ;;
     *) echo 'Unknown mode. See --help.' >&2; exit 2 ;;
 esac
