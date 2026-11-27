@@ -18,6 +18,8 @@ from tempfile import TemporaryDirectory
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT / "apps"))
+from depth_stream import DepthStream
 
 
 def resolve_profile(name):
@@ -78,6 +80,7 @@ def main():
     if not profile_pipeline:
         profile_pipeline = (profile or {}).get("camera", {}).get("module", {}).get("pipeline")
     native_camera = bool(profile) and profile_pipeline == "none"
+    depth_stream = DepthStream.from_module(profile["camera"]["module"], simulation=True) if native_camera else None
     profile_has_camera = bool(profile) and bool(profile.get("camera", {}).get("config"))
     data_web_source = None
     if profile_has_camera and args.data_web and args.depth:
@@ -161,10 +164,8 @@ def main():
             depth_description = "off"
         elif native_camera:
             module = profile["camera"]["module"]
-            simulation_stream = module.get("simulation_stream", {"width": 640, "height": 480})
             depth_description = (f"native Raw{'+RGB' if module.get('rgb') else ''} "
-                                 f"{simulation_stream['width']}x{simulation_stream['height']}"
-                                 f"@{module['stream']['fps']:g}")
+                                 f"{depth_stream.width}x{depth_stream.height}@{depth_stream.fps:g}")
         else:
             depth_description = "Parkour Raw/Model"
         print(f"Shared G1 simulation: DDS domain {args.domain}, interface lo, depth {depth_description}"
@@ -179,11 +180,10 @@ def main():
                 sys.path.insert(0, str(PROJECT_ROOT / "apps" / "remote_control"))
                 from bridge import ObservationBridge
 
-                video_stream = depth_camera.get("simulation_stream", {"width": 640, "height": 480})
-                width, height = video_stream["width"], video_stream["height"]
+                width, height = depth_stream.width, depth_stream.height
                 focal = height / (2 * math.tan(math.radians(depth_camera["vertical_fov_deg"]) / 2))
                 intrinsics = {"fx": focal, "fy": focal, "ppx": width / 2, "ppy": height / 2}
-                bridge = ObservationBridge(args.remote_port, args.remote_socket, args.remote_control)
+                bridge = ObservationBridge(args.remote_port, args.remote_socket, args.remote_control, depth_stream)
                 extensions.callback(bridge.close)
                 bridge.start(args.domain, "lo")
 

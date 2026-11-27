@@ -42,10 +42,12 @@ printf '%s\n' "$remote_dir"
 
 LD_LIBRARY_PATH="$PWD/.deps/realsense/lib:$PWD/.deps/cyclonedds/lib:$PWD/.deps/runtime/python/lib" \
   .deps/python/bin/python3 -u install/apps/remote_control/bridge.py \
-  --interface eth0 --target-socket /tmp/实际目录/target.sock
+  --interface eth0 --profile door --target-socket /tmp/实际目录/target.sock
 ```
 
-远端模式禁止实机接管，按 `Start` 或 `9` 都不会创建 `rt/lowcmd` 发布者或释放原厂运动服务。用遥控器 `X` 复位空跑目标，等待完成后按 `A`，再在控制器终端按 `g`。遥控器 `Y` 撤销远端目标，`B` 或 `Select` 停止。PC2 上不要同时启动另一相机采集进程；需要看状态时可运行 `./install/g1 monitor --joints-only`。
+远端桥默认使用 640×480 @30 Hz，`--profile door` 会从 Door 任务配置读取当前分辨率和帧率。PC2 上不要同时启动另一相机采集进程；需要看状态时可运行 `./install/g1 monitor --joints-only`。
+
+远端模式禁止实机接管，按 `Start` 或 `9` 都不会创建 `rt/lowcmd` 发布者或释放原厂运动服务。用遥控器 `X` 复位空跑目标，等待完成后按 `A`，再在控制器终端按 `g`。遥控器 `Y` 撤销远端目标，`B` 或 `Select` 停止。
 
 在工控机建立隧道，并用同一份源码下的客户端（Python 和 NumPy）运行：
 
@@ -58,4 +60,6 @@ ssh -N -L 127.0.0.1:8770:127.0.0.1:8770 unitree@192.168.123.164
 
 ## 数据接口
 
-版本 1：每个 TCP 消息以 4 字节网络字节序长度开头。观测体包含 4 字节 JSON 长度、UTF-8 JSON 和行优先的小端 `float32` 米制深度。元数据包括 `version`、`session`、`sequence`、`capture_ns`、`state_ns`、`shape`、`dtype`、`intrinsics`、`state`、`command`。状态包含 DDS 顺序的 `q/dq`、骨盆 `imu_wxyz`、`gyro_rad_s` 和未去重力的 `accelerometer_m_s2`；深度与最近的主机接收状态最多相差 50 ms，不是硬件同步。返回体仅 UTF-8 JSON。观测最多 10 Hz、一次仅一个待回复观测，较旧深度会被覆盖；目标年龄上限为 250 ms。
+版本 1：每个 TCP 消息以 4 字节网络字节序长度开头。观测体包含 4 字节 JSON 长度、UTF-8 JSON 和行优先的小端 `float32` 米制深度。元数据包括 `version`、`session`、`sequence`、`capture_ns`、`state_ns`、`shape`、`dtype`、`depth_fps`（配置目标）、`intrinsics`、`state`、`command`。状态包含 DDS 顺序的 `q/dq`、骨盆 `imu_wxyz`、`gyro_rad_s` 和未去重力的 `accelerometer_m_s2`；深度与最近的主机接收状态最多相差 50 ms，不是硬件同步。返回体仅 UTF-8 JSON。
+
+远端桥和 Monitor 使用同一任务的深度分辨率和目标频率。仿真优先使用 `simulation_stream` 中的字段，实机使用 `stream`；Door 当前均为 640×480、30 Hz。远端不缩放、不补帧，一次仍只等待一个回复，较新的帧覆盖旧帧，目标年龄上限仍为 250 ms。640×480 的米制深度在 30 Hz 时净载荷约 295 Mbit/s，建议用千兆有线；实际频率以会话的 `rate=` 为准。

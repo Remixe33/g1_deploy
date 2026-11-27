@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from camera_sources import MockSource, RealSenseSource, SimSource, load_camera_module
+from depth_stream import DEFAULT_CAMERA_CONFIG, DepthCadence, profile_camera
 from recorder import Recorder
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -214,7 +215,7 @@ class JointMonitor:
     def camera_loop(self):
         """保存实际收到的相机帧，并独立限制 MJPEG 预览刷新率。"""
         panes = getattr(self.camera_source, "panes", ["depth"]) if self.camera_source is not None else []
-        last_preview = 0.0
+        cadence = DepthCadence(self.camera_source.stream)
         while not self.stopping.is_set():
             try:
                 frame = self.camera_source.read()
@@ -229,10 +230,10 @@ class JointMonitor:
                     self.recorder.add_frame(frame)
             except Exception as error:
                 print(f"Recorder error: {error}", flush=True)
-            now = time.monotonic()
-            if now < last_preview + 1.0 / 15:
+            now = time.monotonic_ns()
+            if now < cadence.next_ns:
                 continue
-            last_preview = now
+            cadence.advance(now)
             jpegs = {}
             for pane in panes:
                 image = self.pane_image(frame, pane)
@@ -481,28 +482,36 @@ def main():
                         help="DDS sampling limit in Hz (default: 50)")
     parser.add_argument("--source", choices=("none", "realsense", "sim", "mock"), default="none",
                         help="Camera source: realsense device, sim injection (used by sim.py), or mock")
-    parser.add_argument("--camera-config", help="Camera module JSON (profiles/configs/cameras/*.json)")
+    camera_options = parser.add_mutually_exclusive_group()
+    camera_options.add_argument("--profile", help="Task name or profile JSON (uses camera.config)")
+    camera_options.add_argument("--camera-config", help="Camera module JSON (profiles/configs/cameras/*.json)")
     parser.add_argument("--record", action="store_true", help="Start recording immediately")
     parser.add_argument("--record-dir", default="logs/recordings", help="Recording root directory")
     args = parser.parse_args()
     if args.domain < 0 or not 1 <= args.port <= 65535 or not math.isfinite(args.rate) or args.rate <= 0:
         parser.error("domain must be nonnegative; rate must be positive; port must be 1..65535")
-    if args.source == "realsense" and not args.camera_config:
-        parser.error("--source realsense requires --camera-config (profiles/configs/cameras/*.json)")
-
+    camera_config = args.camera_config
+    if args.source != "none" and args.profile:
+        try:
+            camera_config = profile_camera(args.profile)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
     camera_source = None
     camera_module = None
-    if args.source == "realsense":
-        from camera_sources import RealSenseSource
-        camera_source = RealSenseSource(args.camera_config)
-    elif args.source == "mock":
-        from camera_sources import MockSource
-        camera_source = MockSource(args.camera_config)
-    elif args.source == "sim":
-        from camera_sources import SimSource
-        camera_source = SimSource()
-        if args.camera_config:
-            camera_source.set_module(load_camera_module(args.camera_config))
+    try:
+        if args.source == "realsense":
+            camera_source = RealSenseSource(camera_config or DEFAULT_CAMERA_CONFIG)
+            camera_module = camera_source.module
+        elif args.source == "mock":
+            camera_source = MockSource(camera_config)
+            camera_module = camera_source.module
+        elif args.source == "sim":
+            camera_source = SimSource()
+            if camera_config:
+                camera_module = load_camera_module(camera_config)
+                camera_source.set_module(camera_module)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
 
     monitor = JointMonitor(args.host, args.port, args.rate, camera_source=camera_source,
                            camera_module=camera_module, record_root=args.record_dir)

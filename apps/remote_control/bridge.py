@@ -15,15 +15,18 @@ import time
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from depth_stream import DEFAULT_CAMERA_CONFIG, DepthCadence, profile_camera
 from protocol import (LENGTH, LOCAL_HEADER, MAX_OBSERVATION, MAX_TARGET, PAIR_WINDOW_NS,
                       TARGET_AGE_NS, encode_json, receive_message, send_message)
 
 
 class ObservationBridge:
-    def __init__(self, port, target_socket, mode):
+    def __init__(self, port, target_socket, mode, stream):
         self.port = port
         self.target_socket = target_socket
         self.mode = mode
+        self.stream = stream
         self.condition = threading.Condition()
         self.states = deque(maxlen=256)
         self.frame = None
@@ -71,10 +74,13 @@ class ObservationBridge:
         self.subscriber.Init(receive, 1)
         self.thread = threading.Thread(target=self._serve, name="remote-observations", daemon=True)
         self.thread.start()
-        print(f"Remote bridge: 127.0.0.1:{self.listener.getsockname()[1]} ({self.mode}); "
+        print(f"Remote bridge: 127.0.0.1:{self.listener.getsockname()[1]} ({self.mode}), "
+              f"depth {self.stream.width}x{self.stream.height} @ {self.stream.fps:g} Hz target; "
               "use an SSH tunnel. No motor commands from bridge.", flush=True)
 
     def deposit(self, depth, captured_ns, intrinsics):
+        if depth.shape != (self.stream.height, self.stream.width):
+            raise ValueError(f"Depth shape {depth.shape} does not match the configured stream")
         with self.condition:
             self.frame = (depth, captured_ns, intrinsics)
             self.condition.notify()
@@ -93,6 +99,7 @@ class ObservationBridge:
                     raise
                 self.connection = connection
                 session = secrets.randbits(63) or 1
+                cadence = DepthCadence(self.stream)
                 last_frame_ns = time.monotonic_ns()
                 first_sent_at = 0
                 sent_at = 0
@@ -111,12 +118,12 @@ class ObservationBridge:
                                 self.condition.wait_for(
                                     lambda: self.stopped or (self.frame is not None and
                                             self.frame[1] > last_frame_ns and
-                                             time.monotonic_ns() - sent_at >= 100_000_000),
+                                             time.monotonic_ns() >= cadence.next_ns),
                                     timeout=0.025)
                                 if self.stopped:
                                     break
                                 if self.frame is None or self.frame[1] <= last_frame_ns or (
-                                        time.monotonic_ns() - sent_at < 100_000_000):
+                                        time.monotonic_ns() < cadence.next_ns):
                                     continue
                                 depth, captured_ns, intrinsics = self.frame
                                 if not self.states or self.states[-1][0] < captured_ns:
@@ -141,7 +148,7 @@ class ObservationBridge:
                             sequence += 1
                             metadata = encode_json({"version": 1, "session": session, "sequence": sequence,
                                                     "capture_ns": captured_ns, "state_ns": paired[0],
-                                                    "shape": [height, width], "dtype": "<f4",
+                                                    "shape": [height, width], "dtype": "<f4", "depth_fps": self.stream.fps,
                                                     "intrinsics": intrinsics, "state": paired[1], "command": self.mode})
                             if LENGTH.size + len(metadata) + depth.nbytes > MAX_OBSERVATION:
                                 raise ValueError("depth frame exceeds protocol size limit")
@@ -153,6 +160,7 @@ class ObservationBridge:
                             connection.settimeout(time_left / 1e9)
                             if not first_sent_at:
                                 first_sent_at = sent_at
+                            cadence.advance(sent_at)
                             send_message(connection, LENGTH.pack(len(metadata)) + metadata + depth.tobytes())
                             target = json.loads(receive_message(connection, MAX_TARGET, captured_ns + TARGET_AGE_NS))
                             received_ns = time.monotonic_ns()
@@ -225,8 +233,9 @@ class ObservationBridge:
 def main():
     parser = argparse.ArgumentParser(description="Export G1 depth/state and return local dry-run targets.")
     parser.add_argument("--interface", required=True)
-    parser.add_argument("--camera-config", type=Path,
-                        default=Path(__file__).resolve().parents[2] / "profiles/configs/cameras/d435_depth_480x270_60hz.json")
+    camera_options = parser.add_mutually_exclusive_group()
+    camera_options.add_argument("--profile", help="Task name or profile JSON (uses camera.config)")
+    camera_options.add_argument("--camera-config", type=Path, help="Explicit camera module JSON")
     parser.add_argument("--port", type=int, default=8770)
     parser.add_argument("--target-socket", required=True, type=Path)
     parser.add_argument("--command", choices=("velocity", "joints"), default="velocity")
@@ -239,12 +248,16 @@ def main():
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitor"))
     from camera_sources import RealSenseSource
 
-    camera = RealSenseSource(args.camera_config)
+    try:
+        camera_config = profile_camera(args.profile) if args.profile else args.camera_config or DEFAULT_CAMERA_CONFIG
+        camera = RealSenseSource(camera_config)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     with ExitStack() as stack:
         stack.callback(camera.close)
         camera.open()
         intrinsics = camera.intrinsics()
-        bridge = ObservationBridge(args.port, str(args.target_socket), args.command)
+        bridge = ObservationBridge(args.port, str(args.target_socket), args.command, camera.stream)
         stack.callback(bridge.close)
         bridge.start(0, args.interface)
         while True:

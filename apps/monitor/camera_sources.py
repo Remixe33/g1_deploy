@@ -4,6 +4,7 @@
 """
 import json
 import math
+import sys
 import threading
 import time
 import types
@@ -11,14 +12,12 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from depth_stream import DepthStream
+
 
 def load_camera_module(path):
-    module = json.loads(Path(path).read_text())
-    stream = module.get("stream", {})
-    module.setdefault("_width", int(stream.get("width", 640)))
-    module.setdefault("_height", int(stream.get("height", 480)))
-    module.setdefault("_fps", float(stream.get("fps", 30)))
-    return module
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _frame(raw, sequence, source_time, fps, capture_monotonic, **metadata):
@@ -37,10 +36,12 @@ class SimSource:
         self._condition = threading.Condition()
         self._frame = None
         self._module = None
+        self.stream = DepthStream.from_module({})
         self.panes = ["depth"]
 
     def set_module(self, module):
         self._module = module
+        self.stream = DepthStream.from_module(module, simulation=True)
         pipeline = module.get("pipeline")
         self.panes = ["depth"] if pipeline == "none" else ["raw", "model"]
 
@@ -62,19 +63,15 @@ class SimSource:
     def intrinsics(self):
         """仿真渲染为标准针孔：由模块视场与仿真分辨率解析内参。"""
         module = self._module or {}
-        stream = module.get("simulation_stream", module.get("stream", {}))
-        width = int(stream.get("width", 640))
-        height = int(stream.get("height", 480))
+        width, height = self.stream.width, self.stream.height
         vfov = math.radians(float(module.get("vertical_fov_deg", 58.29)))
         hfov = 2.0 * math.atan(math.tan(vfov / 2) * width / height)
         return {"fx": (width / 2) / math.tan(hfov / 2), "fy": (height / 2) / math.tan(vfov / 2),
                 "ppx": width / 2, "ppy": height / 2}
 
     def info(self):
-        module = self._module or {}
-        stream = module.get("simulation_stream", module.get("stream", {}))
-        size = {"width": stream.get("width", 640), "height": stream.get("height", 480)}
-        return {"source": "simulation", **size, "fps": stream.get("fps", 30),
+        return {"source": "simulation", "width": self.stream.width, "height": self.stream.height,
+                "fps": self.stream.fps,
                 "panes": list(self.panes)}
 
     def close(self):
@@ -86,10 +83,8 @@ class MockSource:
 
     def __init__(self, camera_json=None):
         module = load_camera_module(camera_json) if camera_json else {}
-        stream = module.get("stream", {})
-        self.width = int(stream.get("width", 640))
-        self.height = int(stream.get("height", 480))
-        self.fps = float(stream.get("fps", 30))
+        self.stream = DepthStream.from_module(module)
+        self.width, self.height, self.fps = self.stream.width, self.stream.height, self.stream.fps
         self.module = module
         self.sequence = 0
         self._deadline = time.monotonic()
@@ -132,10 +127,10 @@ class RealSenseSource:
 
     def __init__(self, camera_json):
         module = load_camera_module(camera_json)
-        stream = module.get("stream", {})
-        self.width = int(stream.get("width", 480))
-        self.height = int(stream.get("height", 270))
-        self.fps = int(stream.get("fps", 60))
+        self.stream = DepthStream.from_module(module)
+        if not self.stream.fps.is_integer():
+            raise ValueError("RealSense depth FPS must be an integer supported by the device")
+        self.width, self.height, self.fps = self.stream.width, self.stream.height, int(self.stream.fps)
         self.module = module
         self.sequence = 0
         self.serial = ""

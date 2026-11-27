@@ -119,8 +119,10 @@ cpack -G TGZ
 
 ```bash
 ./g1 task door real            # 终端一，启动档案指定的策略，初始为空跑
-./g1 monitor                   # 终端二，关节、IMU、D435 深度和录制
+./g1 monitor --profile door    # 终端二，关节、IMU、任务配置的 D435 深度和录制
 ```
+
+直接运行 `./g1 monitor` 时，D435 深度默认使用 640×480 @30 Hz。要检查点云是否以该速率实际保存，请按 [实机帧率诊断](apps/monitor/README.md#实机帧率诊断) 核对录制结果。
 
 监控和独立 RealSense 预览默认只监听 PC2 本机，端口分别是 `8765` 和 `8766`。从工控机访问时，建议使用 [SSH 端口转发](docs/WEB.md#从工控机访问)。若在可信局域网中需要直连，可以在 PC2 上选择运行以下命令之一：
 

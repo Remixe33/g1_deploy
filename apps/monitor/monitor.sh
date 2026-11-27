@@ -4,12 +4,12 @@ usage() {
     cat <<'HELP'
 Usage: ./g1 monitor [--interface IFACE] [--host IP] [--port PORT]
                     [--joints-only | --source none|realsense|mock|sim]
-                    [--camera-config JSON] [--rate HZ] [--record] [--record-dir DIR]
+                    [--profile TASK | --camera-config JSON] [--rate HZ] [--record] [--record-dir DIR]
        ./g1 monitor IFACE [HOST] [PORT] [options]
 
 Uses DDS domain 0. Options override .g1-onboard.conf. Without a positional
-interface, the default is joints + D435 depth. Use --camera-config to select
-the depth profile. The legacy positional form defaults to joints only.
+interface, the default is joints + D435 depth (640x480 at 30 Hz). Use --profile
+to follow a task's camera settings. The legacy positional form defaults to joints only.
 HTTP defaults to 127.0.0.1:8765. Use --host 0.0.0.0 for direct LAN access.
 HELP
 }
@@ -24,6 +24,7 @@ host=
 port=
 source_mode=
 camera_config=
+profile=
 joints_only=0
 legacy=0
 extra=()
@@ -41,7 +42,7 @@ while (( $# )); do
         --record) extra+=(--record); shift; continue ;;
     esac
     case "$option" in
-        --interface|--host|--port|--source|--camera-config|--rate|--record-dir|--domain) ;;
+        --interface|--host|--port|--source|--profile|--camera-config|--rate|--record-dir|--domain) ;;
         *) echo "Unknown monitor option: $1. See ./g1 monitor --help." >&2; exit 2 ;;
     esac
     if [[ "$1" == *=* ]]; then
@@ -58,6 +59,7 @@ while (( $# )); do
         --host) host="$value" ;;
         --port) port="$value" ;;
         --source) source_mode="$value" ;;
+        --profile) profile="$value" ;;
         --camera-config) camera_config="$value" ;;
         --domain)
             if [[ "$value" != 0 ]]; then echo 'The hardware monitor uses DDS domain 0.' >&2; exit 2; fi ;;
@@ -78,18 +80,20 @@ if [[ ! "$port" =~ ^[0-9]{1,5}$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); th
     echo "Set --port (or MONITOR_PORT in $onboard_file) to a port from 1 to 65535." >&2
     exit 2
 fi
+if [[ -n "$profile" && -n "$camera_config" ]]; then
+    echo 'Choose --profile or --camera-config, not both.' >&2
+    exit 2
+fi
 if (( joints_only )); then
-    if [[ -n "$camera_config" || ( -n "$source_mode" && "$source_mode" != none ) ]]; then
+    if [[ -n "$camera_config$profile" || ( -n "$source_mode" && "$source_mode" != none ) ]]; then
         echo '--joints-only cannot be combined with a camera source or config.' >&2
         exit 2
     fi
     source_mode=none
 elif [[ -z "$source_mode" ]]; then
-    if (( legacy )) && [[ -z "$camera_config" ]]; then source_mode=none; else source_mode=realsense; fi
+    if (( legacy )) && [[ -z "$camera_config$profile" ]]; then source_mode=none; else source_mode=realsense; fi
 fi
-if [[ "$source_mode" == realsense && -z "$camera_config" ]]; then
-    camera_config="$root_dir/profiles/configs/cameras/d435_depth_480x270_60hz.json"
-fi
+if [[ -n "$profile" ]]; then extra=(--profile "$profile" "${extra[@]}"); fi
 if [[ -n "$camera_config" ]]; then extra=(--camera-config "$camera_config" "${extra[@]}"); fi
 
 deps="$onboard_dir/.deps"

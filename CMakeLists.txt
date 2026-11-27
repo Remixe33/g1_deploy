@@ -137,7 +137,7 @@ endforeach()
 install(PROGRAMS "${REPOSITORY_ROOT}/g1" DESTINATION .)
 install(FILES .g1-onboard.conf.example DESTINATION .)
 install(FILES scripts/onboard_config.sh DESTINATION scripts)
-install(FILES apps/web_addresses.py DESTINATION apps)
+install(FILES apps/web_addresses.py apps/depth_stream.py DESTINATION apps)
 install(FILES apps/remote_control/bridge.py apps/remote_control/client.py
     apps/remote_control/protocol.py DESTINATION apps/remote_control)
 install(PROGRAMS "${REPOSITORY_ROOT}/apps/monitor/monitor.sh" DESTINATION . RENAME monitor)

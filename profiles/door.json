@@ -1,5 +1,5 @@
 {
-  "description": "door task: dwaq + doors scene + head-back robot + native 720p camera",
+  "description": "door task: dwaq + doors scene + head-back robot + native depth camera",
   "program": "dwaq",
   "policy_config": "../apps/policies/dwaq/config/g1_locomotion.json",
   "scene": {

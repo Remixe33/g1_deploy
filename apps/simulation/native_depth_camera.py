@@ -9,6 +9,7 @@ import mujoco
 import numpy as np
 
 from depth_frame import DepthFrame
+from depth_stream import DepthCadence, DepthStream
 
 
 active_camera = None
@@ -38,16 +39,11 @@ def camera_id(model, name):
 class NativeDepthCamera:
     def __init__(self, model, data, camera_json_path):
         module = json.loads(Path(camera_json_path).read_text())
-        self.fps = float(module["stream"]["fps"])
+        stream = DepthStream.from_module(module, simulation=True)
+        self.width, self.height, self.fps = stream.width, stream.height, stream.fps
         self.vertical_fov_deg = float(module["vertical_fov_deg"])
-        if not math.isfinite(self.fps) or self.fps <= 0 or not math.isfinite(self.vertical_fov_deg) or self.vertical_fov_deg <= 0:
-            raise ValueError("Depth stream rate and FOV must be positive")
-        simulation_stream = module.get("simulation_stream", {"width": 640, "height": 480})
-        self.width = int(simulation_stream["width"])
-        self.height = int(simulation_stream["height"])
-        if self.width <= 0 or self.height <= 0:
-            raise ValueError("Depth simulation dimensions must be positive")
-        validate_supported_profile(module, "depth", self.width, self.height, self.fps)
+        if not math.isfinite(self.vertical_fov_deg) or self.vertical_fov_deg <= 0:
+            raise ValueError("Depth FOV must be positive and finite")
         self.horizontal_fov_deg = horizontal_fov(self.vertical_fov_deg, self.width, self.height)
         self.model, self.data = model, data
         self.camera_id = camera_id(model, module.get("scene_camera", "depth_camera"))
@@ -55,14 +51,14 @@ class NativeDepthCamera:
         self.renderer.enable_depth_rendering()
         self.frame = None
         self.sequence = 0
-        self._next = 0.0
+        self.cadence = DepthCadence(stream)
         global active_camera
         active_camera = self
 
     def update(self):
-        now = time.monotonic()
-        if self.frame is None or now >= self._next:
-            self._next = now + 1.0 / self.fps
+        now = time.monotonic_ns()
+        if now >= self.cadence.next_ns:
+            self.cadence.advance(now)
             self.renderer.update_scene(self.data, camera=self.camera_id)
             depth = np.asarray(self.renderer.render()).copy()
             self.frame = DepthFrame(raw=depth, sequence=self.sequence, time=float(self.data.time), fps=self.fps)

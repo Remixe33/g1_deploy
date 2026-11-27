@@ -4,11 +4,13 @@ import math
 import time
 
 from camera_sources import RealSenseSource
+from depth_stream import DEFAULT_CAMERA_CONFIG
 
 
 def main():
     parser = argparse.ArgumentParser(description="Measure Monitor's RealSense input without preview or recording.")
-    parser.add_argument("--camera-config", required=True)
+    parser.add_argument("--camera-config", default=DEFAULT_CAMERA_CONFIG,
+                        help="Camera module JSON (default: D435 640x480 at 30 Hz)")
     parser.add_argument("--seconds", type=float, default=30)
     args = parser.parse_args()
     if not math.isfinite(args.seconds) or args.seconds <= 0:

@@ -4,13 +4,13 @@
 
 ## 当前模块
 
-- `d435_rgbd.json`：D435 深度和独立 RGB，默认 640×480@30，供 door 原生感知。
+- `d435_rgbd.json`：D435 640×480 @30 Hz，用于 Door 原生感知，也提供 Monitor 和远端桥的默认深度配置。
 - `d435_depth_480x270_60hz.json`：D435 480×270@60，供 Parkour 策略预处理管线。
 
 ## 常用字段
 
 - `stream`：实机深度分辨率与帧率。
-- `simulation_stream`：仿真深度分辨率。
+- `simulation_stream`：可选，覆盖仿真深度的 `width`、`height`、`fps`，未写的字段继承 `stream`。
 - `pipeline`：`none` 仅 Raw；`parkour` 生成 Raw 和 Model。
 - `scene_camera`：MuJoCo 场景相机名。
 - `horizontal_fov_deg` / `vertical_fov_deg`：默认画幅的视场记录；仿真水平视场会按实际画幅重新计算。

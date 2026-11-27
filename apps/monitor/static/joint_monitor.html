@@ -186,7 +186,7 @@ async function pollStatus(){
   const panes=cam.panes||[];
   const online=!!cam.online&&panes.length>0;
   const badge=$('camera-status');
-  badge.textContent=online?`${cam.source} · ${cam.width}x${cam.height}@${cam.fps}`:'未启用';
+  badge.textContent=online?`${cam.source} · ${cam.width}×${cam.height} · 目标 ${cam.fps} Hz`:'未启用';
   badge.className='status'+(online?' live':'');
   const PANE_LABEL={depth:'Depth',raw:'Depth Raw 36×64',model:'Model 18×32'};
   const wrap=$('camera-panes');

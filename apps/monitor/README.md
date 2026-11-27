@@ -11,7 +11,7 @@
 | `mock` | 合成斜坡深度 | 无设备开发验证 |
 | `none` | 无相机 | 纯关节监控；仿真直接运行 Python 时的默认值 |
 
-相机模块来自 `profiles/configs/cameras/*.json`。Door 仿真使用 `d435_rgbd.json`（640×480@30）；实机短命令默认用 480×270@60 的仅深度配置。实机单 D435 的深度流互斥规则见 [相机模块说明](../../profiles/configs/cameras/README.md)。
+实机监控默认使用 640×480 @30 Hz。`--profile` 选择任务的相机配置，也可用 `--camera-config` 指定 `profiles/configs/cameras/` 中的模块。Door 仿真自动使用 Door 任务配置，当前也是 640×480 @30 Hz。`--rate` 只影响 DDS 状态采样。
 
 Monitor 只显示深度，即使相机配置中有 `rgb`，也不打开 RealSense 的色彩流。DWaQ 不打开相机，Parkour 和 Hybrid 实机控制器则会占用同一台 D435。
 
@@ -22,12 +22,14 @@ Monitor 只显示深度，即使相机配置中有 `rgb`，也不打开 RealSens
 ```bash
 # 仿真：sim.py --profile door 自动托管数据网页，无需单独启动；
 # 浏览器打开 http://127.0.0.1:8765/
-./g1 monitor --interface eth0  # 使用实际 DDS 网卡，仅开启深度流
+./g1 monitor --interface eth0 --profile door  # 使用实际 DDS 网卡，按任务配置开启深度流
 .venv/bin/python apps/monitor/robot_data_web.py --source mock                   # 无设备验证
 bash apps/monitor/monitor.sh eth0 0.0.0.0 8765                         # 旧行为：纯关节监控（域 0）
 ```
 
 相机出帧后，可用网页顶部的 `开始录制/停止录制` 按钮（POST `/api/record/start|stop`），也可在启动时加 `--record`。
+
+网页不缩放送出的深度帧，刷新目标跟随相机配置；实际显示频率仍受采集、编码和浏览器性能影响。实机单个 D435 不能由 Monitor 与远端桥同时打开；远端桥占用相机时，Monitor 用 `--joints-only`。
 
 ## 录制格式
 
@@ -46,7 +48,7 @@ import open3d as o3d
 cloud = o3d.io.read_point_cloud("pointcloud/000000.ply")
 ```
 
-点云不会补帧，也不保证达到相机标称帧率。例如，设备配置为 60 Hz，不代表每秒保存了 60 个点云。仿真还受渲染和投递节奏影响。旧录像的 `host_monotonic` 在写盘后记录；新录像在取帧后、滤波前记录（仿真为投递时），更适合与同一主机上的状态数据对齐。
+每个收到并成功保存的深度帧生成一个点云。实际保存帧率取决于采集、处理和写盘速度，仿真还受渲染和投递节奏影响。旧录像的 `host_monotonic` 在写盘后记录；新录像在取帧后、滤波前记录（仿真为投递时），更适合与同一主机上的状态数据对齐。
 
 ### 实机帧率诊断
 
@@ -54,11 +56,10 @@ cloud = o3d.io.read_point_cloud("pointcloud/000000.ply")
 
 ```bash
 LD_LIBRARY_PATH="$PWD/.deps/realsense/lib:$PWD/.deps/runtime/python/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  .deps/python/bin/python3 apps/monitor/probe_realsense.py \
-  --camera-config profiles/configs/cameras/d435_depth_480x270_60hz.json --seconds 30
+  .deps/python/bin/python3 apps/monitor/probe_realsense.py --seconds 30
 ```
 
-随后用同一配置分别运行 Monitor 预览和至少 30 秒的点云录制。对比 `/api/status` 中的实收帧率、原始设备帧号缺口和滤波耗时，以及 `meta.json` 中的保存帧率与 PLY 写入耗时。应用序号连续不代表设备没有漏帧。
+随后用相同的 640×480 @30 Hz 配置分别运行 Monitor 预览和至少 30 秒的点云录制。对比 `/api/status` 中的实收帧率、原始设备帧号缺口和滤波耗时，以及 `meta.json` 中的保存帧率与 PLY 写入耗时。要验证 30 Hz 保存，检查约 30 秒内是否保存约 900 张点云，PLY 与时间戳行是否一一对应，以及相机帧号是否连续。
 
 ## 端点
 
